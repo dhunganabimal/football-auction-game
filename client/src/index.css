@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-pitch-950 text-slate-100 font-body antialiased;
+  background-image:
+    radial-gradient(circle at 15% 0%, rgba(57, 255, 136, 0.08), transparent 40%),
+    radial-gradient(circle at 85% 20%, rgba(37, 229, 255, 0.06), transparent 45%),
+    linear-gradient(180deg, #04140c 0%, #061a0e 60%, #04120a 100%);
+  background-attachment: fixed;
+}
+
+/* Subtle pitch stripes for panels that opt in */
+.pitch-stripes {
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.015) 0px,
+    rgba(255, 255, 255, 0.015) 28px,
+    transparent 28px,
+    transparent 56px
+  );
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm shadow-lg;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-display font-semibold
+           tracking-wide transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed select-none;
+  }
+  .btn-primary {
+    @apply btn bg-neon-green text-pitch-950 hover:shadow-neon-strong hover:brightness-110 active:scale-95;
+  }
+  .btn-ghost {
+    @apply btn border border-white/15 bg-white/5 text-slate-100 hover:bg-white/10 active:scale-95;
+  }
+  .btn-danger {
+    @apply btn bg-neon-pink/90 text-white hover:brightness-110 active:scale-95;
+  }
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-pitch-900/70 px-4 py-2.5 text-slate-100
+           placeholder:text-slate-500 outline-none focus:border-neon-green/60 focus:ring-2 focus:ring-neon-green/20;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400;
+  }
+}
+
+/* Position color coding, reused across the app */
+.pos-GK {
+  @apply bg-amber-400/15 text-amber-300 ring-1 ring-amber-400/30;
+}
+.pos-DEF {
+  @apply bg-sky-400/15 text-sky-300 ring-1 ring-sky-400/30;
+}
+.pos-MID {
+  @apply bg-emerald-400/15 text-emerald-300 ring-1 ring-emerald-400/30;
+}
+.pos-FWD {
+  @apply bg-rose-400/15 text-rose-300 ring-1 ring-rose-400/30;
+}
+
+/* Thin custom scrollbars */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-white/10;
+}
+*::-webkit-scrollbar-thumb:hover {
+  @apply bg-white/20;
+}
