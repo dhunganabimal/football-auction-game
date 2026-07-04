@@ -6,6 +6,7 @@ const STARTING_BID = 1 // $1M opening price for every auction
 const MIN_RESERVE_PER_SPOT = 1 // must keep $1M in reserve per unfilled required spot
 const SNIPE_RESET = 5 // a bid below this many seconds left bumps the clock back to 5s
 const POWER_TRIGGER_EVERY = 10 // power round after every N sold players
+const POWER_ACK_TIMEOUT = 20 // seconds managers get to decide before auto-continuing
 const DEFAULT_AUCTION_SECONDS = 20
 const FREEZE_DURATION = 2 // frozen for the next 2 auctions
 const MAX_LOG = 40
@@ -36,6 +37,8 @@ export class Room {
     this.soldCount = 0
     this.log = []
     this.lastPowerDraw = null // { assignments, at } — kept for late joiners' animation skip
+    this.pendingPowerAck = null // Set of playerIds still deciding on a fresh power card
+    this.powerAckTimer = null // auto-continues the auction if someone stalls deciding
     this.awaitingAuto = false // random mode: a draw is scheduled between auctions
     this.autoTimer = null // pending setTimeout handle for the next auto-draw
     this.timer = setInterval(() => this.tick(), 1000)
@@ -44,6 +47,7 @@ export class Room {
   destroy() {
     clearInterval(this.timer)
     clearTimeout(this.autoTimer)
+    clearTimeout(this.powerAckTimer)
   }
 
   isEmpty() {
@@ -101,6 +105,8 @@ export class Room {
       this.current.folded.add(p.id)
       this.advanceTurn()
     }
+    // Don't let a disconnected manager stall everyone else's power-card decision.
+    if (this.pendingPowerAck?.has(p.id)) this.checkPowerGate()
     return p
   }
 
@@ -415,6 +421,7 @@ export class Room {
   resolveAuction() {
     const cur = this.current
     this.current = null
+    let powerRoundTriggered = false
     if (cur.bidderId) {
       const buyer = this.players.get(cur.bidderId)
       buyer.budget -= cur.price
@@ -428,7 +435,10 @@ export class Room {
         buyerId: buyer.id,
       })
       this.tickFreezes()
-      if (this.soldCount % POWER_TRIGGER_EVERY === 0) this.triggerPowerRound()
+      if (this.soldCount % POWER_TRIGGER_EVERY === 0) {
+        this.triggerPowerRound()
+        powerRoundTriggered = true
+      }
     } else {
       // Nobody bid — return to the pool so it can resurface later.
       this.pool.push(cur.fp)
@@ -436,7 +446,12 @@ export class Room {
       this.io.to(this.code).emit('auction:skipped', { fp: cur.fp })
       this.tickFreezes()
     }
-    this.advanceOrSchedule()
+    // If a power round just fired, hold the next lot until every manager has
+    // confirmed they're done deciding whether to play their new card — see
+    // triggerPowerRound() / resolvePowerGate(). This is what stops someone's
+    // card decision from colliding with (and losing them a shot at) the next
+    // player already going up for auction.
+    if (!powerRoundTriggered) this.advanceOrSchedule()
     this.broadcast()
   }
 
@@ -483,12 +498,55 @@ export class Room {
     for (const p of this.connectedPlayers()) {
       this.io.to(p.socketId).emit('power:card', { card: POWER_CARDS[assignments[p.id].card] })
     }
+
+    // Gate the next auction: nobody goes up for sale again until every
+    // manager who just drew a card has either played it or explicitly chosen
+    // to hold onto it for later. A timeout auto-continues in case someone
+    // wanders off, so the room can't stall forever.
+    this.pendingPowerAck = new Set(Object.keys(assignments))
+    clearTimeout(this.powerAckTimer)
+    this.powerAckTimer = setTimeout(() => this.resolvePowerGate(), POWER_ACK_TIMEOUT * 1000)
+
+    this.broadcast()
+  }
+
+  // A manager confirms they're done deciding for this power round — whether
+  // or not they actually played a card. Unblocks the next auction once every
+  // manager still connected has checked in (or the timeout elapses).
+  acknowledgePowerRound(playerId) {
+    if (!this.pendingPowerAck) return err('No power round is awaiting a response.')
+    this.pendingPowerAck.delete(playerId)
+    this.checkPowerGate()
+    return ok()
+  }
+
+  checkPowerGate() {
+    if (!this.pendingPowerAck) return
+    // Drop anyone who has since disconnected so they can't stall the room.
+    for (const id of [...this.pendingPowerAck]) {
+      const p = this.players.get(id)
+      if (!p || !p.connected) this.pendingPowerAck.delete(id)
+    }
+    if (this.pendingPowerAck.size === 0) this.resolvePowerGate()
+    else this.broadcast()
+  }
+
+  resolvePowerGate() {
+    if (!this.pendingPowerAck) return
+    clearTimeout(this.powerAckTimer)
+    this.powerAckTimer = null
+    this.pendingPowerAck = null
+    this.advanceOrSchedule()
     this.broadcast()
   }
 
   usePowerCard(playerId, cardId, target = {}) {
     const player = this.players.get(playerId)
     if (!player) return err('Unknown manager.')
+    // Power cards only apply between lots — not while a player is actively
+    // being bid on — so playing one never distracts you from (or costs you)
+    // the auction currently on the clock.
+    if (this.current) return err('Wait until the current player is sold before playing a power card.')
     const handIdx = player.cards.indexOf(cardId)
     if (handIdx === -1) return err('You do not hold that card.')
     const def = POWER_CARDS[cardId]
@@ -497,6 +555,11 @@ export class Room {
     const result = this.applyPower(player, def, target)
     if (result.error) return result
     player.cards.splice(handIdx, 1)
+    // Playing a card during an open power-round decision counts as your answer.
+    if (this.pendingPowerAck?.has(playerId)) {
+      this.pendingPowerAck.delete(playerId)
+      this.checkPowerGate()
+    }
     this.broadcast()
     return ok()
   }
@@ -539,7 +602,6 @@ export class Room {
         return ok()
       }
       case 'FIRE_SALE': {
-        if (this.current) return err('Wait until the current auction ends.')
         const idx = player.squad.findIndex((s) => s.id === target.fpId)
         if (idx === -1) return err('Pick one of your own players.')
         const [fp] = player.squad.splice(idx, 1)
@@ -644,6 +706,7 @@ export class Room {
         : null,
       players: this.order.map((id) => this.publicPlayer(this.players.get(id))).filter(Boolean),
       log: this.log.slice(-30),
+      powerGate: this.pendingPowerAck ? { pending: [...this.pendingPowerAck] } : null,
     }
   }
 

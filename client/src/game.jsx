@@ -140,6 +140,7 @@ export function GameProvider({ children }) {
     sellNow: () => run('sellNow'),
     skipNow: () => run('skipNow'),
     usePowerCard: (cardId, target) => run('usePowerCard', { cardId, target }),
+    acknowledgePowerRound: () => run('acknowledgePowerRound'),
     endGame: () => run('endGame'),
     leave: () => {
       localStorage.removeItem(LS_PID)

@@ -141,6 +141,12 @@ io.on('connection', (socket) => {
     reply(cb, room.usePowerCard(socket.data.playerId, cardId, target || {}))
   })
 
+  socket.on('acknowledgePowerRound', (_p, cb) => {
+    const room = currentRoom(socket)
+    if (!room) return reply(cb, { ok: false, error: 'No room.' })
+    reply(cb, room.acknowledgePowerRound(socket.data.playerId))
+  })
+
   socket.on('sellNow', (_p, cb) => {
     const room = currentRoom(socket)
     if (!room) return reply(cb, { ok: false, error: 'No room.' })
