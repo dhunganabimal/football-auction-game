@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useGame } from '../game.jsx'
 import { POSITIONS, fmtM, posClass } from '../lib.js'
+import PlayerAvatar from './PlayerAvatar.jsx'
 
 export default function NominationPanel() {
   const { state, actions } = useGame()
@@ -53,6 +54,7 @@ export default function NominationPanel() {
             onClick={() => actions.nominate(p.id)}
             className="group flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-left transition hover:border-neon-green/50 hover:bg-neon-green/5"
           >
+            <PlayerAvatar name={p.name} position={p.position} photo={p.photo} size={38} />
             <span className={`chip ${posClass(p.position)} w-11 justify-center`}>{p.position}</span>
             <div className="min-w-0 flex-1">
               <div className="truncate font-semibold group-hover:text-neon-green">{p.name}</div>

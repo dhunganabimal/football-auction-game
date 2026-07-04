@@ -76,6 +76,7 @@ export default function Home() {
           ) : (
             <span className="text-neon-pink">● Connecting… make sure the server is running</span>
           )}
+          <div className="mt-1 text-slate-600">Player photos via Wikipedia</div>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useGame } from '../game.jsx'
 import { fmtM, posClass } from '../lib.js'
 import { Avatar } from '../pages/Lobby.jsx'
+import PlayerAvatar from './PlayerAvatar.jsx'
 
 export default function AuctionBlock() {
   const { state } = useGame()
@@ -25,7 +26,10 @@ export default function AuctionBlock() {
         {/* Player card */}
         <div className="flex-1">
           <div className="text-xs font-semibold uppercase tracking-widest text-neon-cyan">On the Block</div>
-          <h2 className="mt-1 font-display text-4xl font-bold leading-tight md:text-5xl">{cur.fp.name}</h2>
+          <div className="mt-1 flex items-center gap-4">
+            <PlayerAvatar name={cur.fp.name} position={cur.fp.position} photo={cur.fp.photo} size={72} />
+            <h2 className="font-display text-4xl font-bold leading-tight md:text-5xl">{cur.fp.name}</h2>
+          </div>
           {turns && (
             <div className="mt-2 flex items-center gap-2 text-sm text-slate-300">
               <span className="text-slate-500">On the clock:</span>

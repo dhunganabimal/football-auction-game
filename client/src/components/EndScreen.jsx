@@ -1,11 +1,15 @@
+import { useState } from 'react'
 import { useGame } from '../game.jsx'
 import { fmtM, posClass } from '../lib.js'
 import { Avatar } from '../pages/Lobby.jsx'
+import PlayerAvatar from './PlayerAvatar.jsx'
 import SquadTracker from './SquadTracker.jsx'
+import FormationPitch from './FormationPitch.jsx'
 
 // Final standings. Ranked by: complete squad first, then squad rating total.
 export default function EndScreen() {
   const { state, actions } = useGame()
+  const [view, setView] = useState('pitch') // 'pitch' | 'list'
 
   const squadRating = (p) => p.squad.reduce((n, s) => n + s.rating, 0)
   const ranked = [...state.players].sort(
@@ -19,6 +23,23 @@ export default function EndScreen() {
         <div className="text-5xl">🏆</div>
         <h1 className="mt-2 font-display text-4xl font-bold">Full Time!</h1>
         <p className="text-slate-400">Final squads and standings for room {state.code}.</p>
+
+        <div className="mt-4 inline-flex rounded-full border border-white/10 bg-white/[0.03] p-1">
+          {[
+            { key: 'pitch', label: '⚽ Pitch' },
+            { key: 'list', label: '📋 List' },
+          ].map((v) => (
+            <button
+              key={v.key}
+              onClick={() => setView(v.key)}
+              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                view === v.key ? 'bg-neon-green text-pitch-950 shadow-neon' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="space-y-4">
@@ -43,16 +64,23 @@ export default function EndScreen() {
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4">
-              {p.squad.map((s) => (
-                <div key={s.id} className="flex items-center gap-2 rounded-lg bg-white/[0.03] p-2 text-sm">
-                  <span className={`chip ${posClass(s.position)} w-9 justify-center text-[10px]`}>
-                    {s.position}
-                  </span>
-                  <span className="flex-1 truncate">{s.name}</span>
-                  <span className="text-xs text-neon-gold">{fmtM(s.price)}</span>
+            <div className="mt-3">
+              {view === 'pitch' ? (
+                <FormationPitch squad={p.squad} />
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4">
+                  {p.squad.map((s) => (
+                    <div key={s.id} className="flex items-center gap-2 rounded-lg bg-white/[0.03] p-2 text-sm">
+                      <PlayerAvatar name={s.name} position={s.position} photo={s.photo} size={24} />
+                      <span className={`chip ${posClass(s.position)} w-9 justify-center text-[10px]`}>
+                        {s.position}
+                      </span>
+                      <span className="flex-1 truncate">{s.name}</span>
+                      <span className="text-xs text-neon-gold">{fmtM(s.price)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           </div>
         ))}

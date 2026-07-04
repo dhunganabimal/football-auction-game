@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useGame } from '../game.jsx'
 import { fmtM, posClass } from '../lib.js'
 import { Avatar } from '../pages/Lobby.jsx'
+import PlayerAvatar from './PlayerAvatar.jsx'
 import SquadTracker from './SquadTracker.jsx'
 
 export default function ManagerBoard() {
@@ -60,6 +61,7 @@ export default function ManagerBoard() {
                     {p.squad.length === 0 && <li className="text-xs text-slate-500">No players yet.</li>}
                     {p.squad.map((s) => (
                       <li key={s.id} className="flex items-center gap-2 text-sm">
+                        <PlayerAvatar name={s.name} position={s.position} photo={s.photo} size={22} />
                         <span className={`chip ${posClass(s.position)} w-10 justify-center text-[10px]`}>
                           {s.position}
                         </span>
