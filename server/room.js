@@ -38,6 +38,7 @@ export class Room {
     this.log = []
     this.lastPowerDraw = null // { assignments, at } — kept for late joiners' animation skip
     this.pendingPowerAck = null // Set of playerIds still deciding on a fresh power card
+    this.powerGateReason = null // 'round' (just drew) | 'between' (holding cards between lots)
     this.powerAckTimer = null // auto-continues the auction if someone stalls deciding
     this.awaitingAuto = false // random mode: a draw is scheduled between auctions
     this.autoTimer = null // pending setTimeout handle for the next auto-draw
@@ -446,12 +447,17 @@ export class Room {
       this.io.to(this.code).emit('auction:skipped', { fp: cur.fp })
       this.tickFreezes()
     }
-    // If a power round just fired, hold the next lot until every manager has
-    // confirmed they're done deciding whether to play their new card — see
-    // triggerPowerRound() / resolvePowerGate(). This is what stops someone's
-    // card decision from colliding with (and losing them a shot at) the next
-    // player already going up for auction.
-    if (!powerRoundTriggered) this.advanceOrSchedule()
+    // Hold the next lot until every manager has confirmed they're done deciding
+    // whether to play a card — see openDecisionGate() / resolvePowerGate(). This
+    // is what stops someone's card decision from colliding with (and losing them
+    // a shot at) the next player already going up for auction.
+    //   - a power round just fired -> triggerPowerRound() already opened the gate
+    //   - otherwise, prompt anyone still holding a card between this lot and the next
+    if (powerRoundTriggered || this.openDecisionGate('between')) {
+      this.broadcast()
+      return
+    }
+    this.advanceOrSchedule()
     this.broadcast()
   }
 
@@ -501,13 +507,25 @@ export class Room {
 
     // Gate the next auction: nobody goes up for sale again until every
     // manager who just drew a card has either played it or explicitly chosen
-    // to hold onto it for later. A timeout auto-continues in case someone
-    // wanders off, so the room can't stall forever.
-    this.pendingPowerAck = new Set(Object.keys(assignments))
+    // to hold onto it for later.
+    this.openDecisionGate('round')
+    this.broadcast()
+  }
+
+  // Pause between lots and prompt every manager still holding a card to decide
+  // whether to play one before the next player goes up. Returns true if a gate
+  // was opened (i.e. someone actually holds a card). A timeout auto-continues in
+  // case someone wanders off, so the room can't stall forever.
+  //   reason: 'round'   -> a power-card round just dealt everyone a fresh card
+  //           'between' -> ordinary lot resolved; card holders get a play window
+  openDecisionGate(reason) {
+    const holders = this.connectedPlayers().filter((p) => p.cards.length > 0)
+    if (holders.length === 0) return false
+    this.pendingPowerAck = new Set(holders.map((p) => p.id))
+    this.powerGateReason = reason
     clearTimeout(this.powerAckTimer)
     this.powerAckTimer = setTimeout(() => this.resolvePowerGate(), POWER_ACK_TIMEOUT * 1000)
-
-    this.broadcast()
+    return true
   }
 
   // A manager confirms they're done deciding for this power round — whether
@@ -536,6 +554,7 @@ export class Room {
     clearTimeout(this.powerAckTimer)
     this.powerAckTimer = null
     this.pendingPowerAck = null
+    this.powerGateReason = null
     this.advanceOrSchedule()
     this.broadcast()
   }
@@ -706,7 +725,9 @@ export class Room {
         : null,
       players: this.order.map((id) => this.publicPlayer(this.players.get(id))).filter(Boolean),
       log: this.log.slice(-30),
-      powerGate: this.pendingPowerAck ? { pending: [...this.pendingPowerAck] } : null,
+      powerGate: this.pendingPowerAck
+        ? { pending: [...this.pendingPowerAck], reason: this.powerGateReason }
+        : null,
     }
   }
 

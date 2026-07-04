@@ -15,9 +15,9 @@ export default function AuctionBlock() {
   const turnPlayer = turns ? state.players.find((p) => p.id === cur.turnId) : null
 
   return (
-    <div className="panel pitch-stripes relative overflow-hidden p-6">
+    <div className="panel animated-border pitch-stripes sheen relative overflow-hidden p-6 animate-glow-pulse">
       {cur.discounted && (
-        <div className="absolute right-0 top-4 rotate-3 rounded-l-lg bg-neon-pink px-3 py-1 font-display text-sm font-bold text-white shadow-lg">
+        <div className="absolute right-0 top-4 rotate-3 rounded-l-lg bg-neon-pink px-3 py-1 font-display text-sm font-bold text-white shadow-lg animate-bounce-in">
           🔥 FIRE SALE
         </div>
       )}
@@ -27,7 +27,9 @@ export default function AuctionBlock() {
         <div className="flex-1">
           <div className="text-xs font-semibold uppercase tracking-widest text-neon-cyan">On the Block</div>
           <div className="mt-1 flex items-center gap-4">
-            <PlayerAvatar name={cur.fp.name} position={cur.fp.position} photo={cur.fp.photo} size={72} />
+            <div className="animate-float">
+              <PlayerAvatar name={cur.fp.name} position={cur.fp.position} photo={cur.fp.photo} size={72} />
+            </div>
             <h2 className="font-display text-4xl font-bold leading-tight md:text-5xl">{cur.fp.name}</h2>
           </div>
           {turns && (
@@ -44,7 +46,12 @@ export default function AuctionBlock() {
           </div>
 
           <div className="mt-6 grid grid-cols-2 gap-3">
-            <Stat label="Current Bid" value={fmtM(cur.price)} accent="text-neon-gold" />
+            <Stat
+              key={cur.price}
+              label="Current Bid"
+              value={<span className="animate-pop-in inline-block">{fmtM(cur.price)}</span>}
+              accent="text-gradient"
+            />
             <Stat
               label="Highest Bidder"
               value={

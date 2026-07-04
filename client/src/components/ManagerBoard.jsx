@@ -22,18 +22,31 @@ export default function ManagerBoard() {
           const nominating = state.nominatorId === p.id && !state.current
           const leading = state.current?.bidderId === p.id
           const open = openId === p.id
+          const topRank = i === 0
           return (
             <div
               key={p.id}
-              className={`rounded-xl border bg-white/[0.02] transition ${
-                isYou ? 'border-neon-green/40' : 'border-white/10'
+              className={`rounded-xl border bg-white/[0.02] transition hover:bg-white/[0.04] ${
+                leading
+                  ? 'border-neon-green/60 shadow-neon'
+                  : isYou
+                    ? 'border-neon-green/40'
+                    : topRank
+                      ? 'border-neon-gold/40'
+                      : 'border-white/10'
               }`}
             >
               <button
                 className="flex w-full items-center gap-2.5 p-2.5 text-left"
                 onClick={() => setOpenId(open ? null : p.id)}
               >
-                <span className="w-4 text-center font-display text-sm text-slate-500">{i + 1}</span>
+                <span
+                  className={`w-4 text-center font-display text-sm ${
+                    topRank ? 'text-neon-gold' : 'text-slate-500'
+                  }`}
+                >
+                  {topRank ? '🏆' : i + 1}
+                </span>
                 <Avatar id={p.id} name={p.nickname} size={30} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
@@ -47,7 +60,7 @@ export default function ManagerBoard() {
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   {nominating && <span className="chip bg-neon-cyan/20 text-neon-cyan">nominating</span>}
-                  {leading && <span className="chip bg-neon-green/20 text-neon-green">leading</span>}
+                  {leading && <span className="chip bg-neon-green/20 text-neon-green animate-glow-pulse">leading</span>}
                   {p.frozen > 0 && <span className="chip bg-sky-400/20 text-sky-200">🧊 {p.frozen}</span>}
                   {p.cardCount > 0 && <span className="chip bg-neon-gold/20 text-neon-gold">🃏 {p.cardCount}</span>}
                   {p.complete && <span className="chip bg-neon-green/20 text-neon-green">✓ set</span>}

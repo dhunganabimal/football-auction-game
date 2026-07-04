@@ -44,12 +44,12 @@ function NominateCard({ fp, discounted }) {
 
 function SoldCard({ fp, price, buyerName }) {
   return (
-    <div className="animate-pop-in text-center">
-      <div className="font-display text-6xl font-bold text-neon-green drop-shadow-[0_0_30px_rgba(57,255,136,0.6)]">
+    <div className="text-center">
+      <div className="animate-stamp-in inline-block rounded-2xl border-4 border-neon-green px-8 py-2 font-display text-6xl font-black tracking-wider text-neon-green drop-shadow-[0_0_30px_rgba(57,255,136,0.7)]">
         SOLD!
       </div>
-      <div className="mt-3 text-2xl font-semibold">{fp.name}</div>
-      <div className="mt-1 text-lg text-slate-300">
+      <div className="mt-4 animate-slide-up text-2xl font-semibold">{fp.name}</div>
+      <div className="mt-1 animate-slide-up text-lg text-slate-300">
         to <span className="text-neon-cyan">{buyerName}</span> for{' '}
         <span className="text-neon-gold">{fmtM(price)}</span>
       </div>
@@ -59,8 +59,8 @@ function SoldCard({ fp, price, buyerName }) {
 
 function PowerRoundBanner() {
   return (
-    <div className="animate-pop-in text-center">
-      <div className="text-7xl">⚡</div>
+    <div className="animate-bounce-in text-center">
+      <div className="animate-float text-7xl">⚡</div>
       <div className="mt-2 font-display text-5xl font-bold text-neon-gold drop-shadow-[0_0_30px_rgba(255,210,74,0.6)]">
         POWER CARD ROUND
       </div>
@@ -91,8 +91,8 @@ function DrawCard({ card }) {
 
 function PlayedCard({ byName, card, text }) {
   return (
-    <div className="animate-pop-in text-center">
-      <div className="text-6xl">{card.icon}</div>
+    <div className="animate-bounce-in text-center">
+      <div className="animate-float text-6xl">{card.icon}</div>
       <div className="mt-2 font-display text-3xl font-bold text-neon-gold">{card.name}</div>
       <div className="mt-2 text-lg">
         <span className="text-neon-cyan">{byName}</span> {text.replace(card.icon, '')}

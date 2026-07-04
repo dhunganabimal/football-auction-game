@@ -26,10 +26,10 @@ export default function AuctionRoom() {
       {/* Header */}
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <span className="text-3xl">⚽</span>
+          <span className="animate-float text-3xl">⚽</span>
           <div>
             <div className="font-display text-xl font-bold leading-none">
-              Room <span className="text-neon-green">{state.code}</span>
+              Room <span className="text-gradient">{state.code}</span>
             </div>
             <div className="text-xs text-slate-400">
               {state.soldCount} sold · {state.poolCount} in pool · next power card at{' '}

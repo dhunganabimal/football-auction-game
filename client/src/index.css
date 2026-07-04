@@ -59,6 +59,56 @@ body {
   .label {
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400;
   }
+  /* Neon gradient clipped to text — for headings/values that should pop. */
+  .text-gradient {
+    @apply bg-gradient-to-r from-neon-green via-neon-cyan to-neon-green bg-clip-text text-transparent;
+    background-size: 200% auto;
+    @apply animate-gradient-x;
+  }
+  /* Big call-to-action button with an animated gradient fill + moving sheen. */
+  .btn-hero {
+    @apply btn relative overflow-hidden text-pitch-950;
+    background-image: linear-gradient(110deg, #39ff88, #25e5ff, #c6ff4d, #39ff88);
+    background-size: 220% auto;
+    @apply animate-gradient-x hover:brightness-110 active:scale-95;
+  }
+}
+
+/* Moving highlight sweep — drop <span class="sheen" /> inside a relative,
+   overflow-hidden element to give it a glossy pass of light. */
+.sheen::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.18),
+    transparent
+  );
+  transform: translateX(-150%) skewX(-12deg);
+  animation: shimmer 2.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Animated neon gradient ring around a panel (e.g. the live auction stage). */
+.animated-border {
+  position: relative;
+}
+.animated-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, #39ff88, #25e5ff, #ff4d8d, #ffd24a, #39ff88);
+  background-size: 300% 300%;
+  animation: gradient-x 5s ease infinite;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.7;
 }
 
 /* Position color coding, reused across the app */

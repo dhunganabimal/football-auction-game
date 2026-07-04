@@ -33,7 +33,7 @@ export default function BidControls() {
   const RaiseControls = (
     <>
       <button
-        className="btn-primary w-full py-4 text-2xl animate-pulse-ring"
+        className="btn-hero sheen w-full py-4 text-2xl animate-pulse-ring disabled:opacity-40 disabled:cursor-not-allowed"
         disabled={isHighest || !canAfford(minBid)}
         onClick={() => bid(minBid)}
       >
@@ -44,7 +44,7 @@ export default function BidControls() {
         {quick.map((amt, i) => (
           <button
             key={amt}
-            className="btn-ghost py-3"
+            className="btn-ghost py-3 transition-transform hover:-translate-y-0.5 hover:border-neon-green/40"
             disabled={isHighest || !canAfford(amt)}
             onClick={() => bid(amt)}
           >
