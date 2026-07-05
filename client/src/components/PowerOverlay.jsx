@@ -26,7 +26,17 @@ export default function PowerOverlay() {
   )
 }
 
-function NominateCard({ fp, discounted }) {
+function NominateCard({ fp, discounted, mystery }) {
+  if (mystery) {
+    return (
+      <div className="animate-pop-in panel px-8 py-6 text-center">
+        <div className="text-xs font-semibold uppercase tracking-widest text-fuchsia-300">🎭 Mystery Auction</div>
+        <div className="mt-2 animate-float text-6xl">🎭</div>
+        <div className="mt-2 font-display text-3xl font-bold">A mystery player steps up…</div>
+        <div className="mt-1 text-sm text-slate-400">Nobody knows who — bid blind!</div>
+      </div>
+    )
+  }
   return (
     <div className="animate-pop-in panel px-8 py-6 text-center">
       <div className="text-xs font-semibold uppercase tracking-widest text-neon-cyan">

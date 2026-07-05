@@ -73,8 +73,15 @@ export function GameProvider({ children }) {
       setState((s) => (s && s.current ? { ...s, current: { ...s.current, timeLeft } } : s))
     })
 
-    socket.on('auction:new', ({ fp, discounted }) => {
-      showOverlay({ kind: 'nominate', fp, discounted }, 1600)
+    // Between-lots decision gate countdown (mirrors the auction 'tick').
+    socket.on('gate:tick', ({ secondsLeft, paused }) => {
+      setState((s) =>
+        s && s.powerGate ? { ...s, powerGate: { ...s.powerGate, secondsLeft, paused } } : s
+      )
+    })
+
+    socket.on('auction:new', ({ fp, discounted, mystery }) => {
+      showOverlay({ kind: 'nominate', fp, discounted, mystery }, 1600)
     })
     socket.on('auction:sold', ({ fp, price, buyerName }) => {
       showOverlay({ kind: 'sold', fp, price, buyerName }, 2400)
@@ -89,8 +96,13 @@ export function GameProvider({ children }) {
       // Your own drawn card — reveal it with a flip animation.
       showOverlay({ kind: 'draw', card }, 3200)
     })
-    socket.on('power:played', ({ byName, card, text }) => {
-      showOverlay({ kind: 'played', byName, card, text }, 3000)
+    socket.on('power:played', ({ byName, card, text, auto }) => {
+      // Auto "curse" cards fire mid power-round, where the flashy overlay gets
+      // clobbered by the round banner / draw animations and hidden behind the
+      // decision-gate modal. Surface them as a toast so nobody misses them;
+      // manually-played cards still get the full overlay treatment.
+      if (auto) pushToast(`${byName} ${text}`, card.tone === 'danger' ? 'error' : 'warn')
+      else showOverlay({ kind: 'played', byName, card, text }, 3000)
     })
     socket.on('kicked', ({ reason }) => {
       pushToast(`You were removed from the room${reason ? ` (${reason})` : ''}.`, 'error')
@@ -105,6 +117,7 @@ export function GameProvider({ children }) {
       socket.off('state', setState)
       socket.off('me', setMe)
       socket.off('tick')
+      socket.off('gate:tick')
       socket.off('auction:new')
       socket.off('auction:sold')
       socket.off('auction:skipped')
@@ -156,6 +169,10 @@ export function GameProvider({ children }) {
     skipNow: () => run('skipNow'),
     usePowerCard: (cardId, target) => run('usePowerCard', { cardId, target }),
     acknowledgePowerRound: () => run('acknowledgePowerRound'),
+    // Fire-and-forget: pause/resume the gate countdown while the picker is open.
+    // Silent (plain emit) — a stale hold/release is a harmless no-op server-side.
+    holdGate: () => emit('holdGate'),
+    releaseGate: () => emit('releaseGate'),
     endGame: () => run('endGame'),
     kickPlayer: (targetId) => run('kickPlayer', { targetId }),
     startKickVote: (targetId) => run('startKickVote', { targetId }),

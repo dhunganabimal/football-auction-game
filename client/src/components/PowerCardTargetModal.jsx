@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useGame } from '../game.jsx'
 import { fmtM, posClass } from '../lib.js'
 import { Avatar } from '../pages/Lobby.jsx'
@@ -11,6 +11,15 @@ export default function PowerCardTargetModal({ card, onClose }) {
   const { state, playerId, actions } = useGame()
   const opponents = state.players.filter((p) => p.id !== playerId && p.connected)
   const mine = state.players.find((p) => p.id === playerId)
+
+  // While this picker is open, freeze the between-lots countdown so the next
+  // auction can't start out from under us mid-selection (and others see we're
+  // deciding). Releasing on unmount covers both playing a card and backing out.
+  useEffect(() => {
+    actions.holdGate()
+    return () => actions.releaseGate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const play = async (target) => {
     const res = await actions.usePowerCard(card.id, target)

@@ -8,6 +8,10 @@
 //   'ownPlayer'       -> pick a football player from your own squad
 //   'swap'            -> pick one of YOUR players, then an opponent's player of
 //                        the same position to trade it for
+//
+// auto: true            -> a "curse" card. It never enters the hand and is never
+//                          chosen by the holder — the moment it is drawn the
+//                          server applies its (negative) effect automatically.
 
 export const POWER_CARDS = {
   STEAL: {
@@ -58,14 +62,6 @@ export const POWER_CARDS = {
     target: 'none',
     desc: 'Instantly melt any freeze on yourself so you can bid again right away. The perfect counter to a Bid Freeze.',
   },
-  SHIELD: {
-    id: 'SHIELD',
-    name: 'Shield',
-    icon: '🛡️',
-    tone: 'good',
-    target: 'none',
-    desc: 'Protect yourself for the next 2 players — you cannot be frozen, stolen from, raided or forced to release while your shield holds.',
-  },
   MYSTERY_BOX: {
     id: 'MYSTERY_BOX',
     name: 'Mystery Box',
@@ -73,6 +69,14 @@ export const POWER_CARDS = {
     tone: 'good',
     target: 'none',
     desc: 'Sign a random player straight from the pool into your squad for free. Needs an open squad spot.',
+  },
+  MYSTERY_AUCTION: {
+    id: 'MYSTERY_AUCTION',
+    name: 'Mystery Auction',
+    icon: '🎭',
+    tone: 'warning',
+    target: 'none',
+    desc: 'Put a hidden player from the pool on the block. Only YOU can see who it really is — everyone else bids totally blind. Could be a world-beater… could be a dud. Their identity is revealed the instant the hammer falls.',
   },
   RAID: {
     id: 'RAID',
@@ -130,18 +134,59 @@ export const POWER_CARDS = {
     target: 'none',
     desc: 'Grab a random player from the skipped pile for free. Needs an open squad spot and at least one skipped player waiting.',
   },
+
+  // ---- auto-applied "curse" cards (never enter the hand) -------------------
+  FINE: {
+    id: 'FINE',
+    name: 'Tax Bill',
+    icon: '🧾',
+    tone: 'danger',
+    target: 'none',
+    auto: true,
+    desc: 'Ouch — the taxman cometh. A slice of your remaining budget is deducted the moment you draw this. Applies automatically.',
+  },
+  INJURY: {
+    id: 'INJURY',
+    name: 'Injury Blow',
+    icon: '🚑',
+    tone: 'danger',
+    target: 'none',
+    auto: true,
+    desc: 'Your most recent signing limps off injured and is released straight back into the pool — you get your money back, but you lose the player. Applies automatically.',
+  },
+  COLD_FEET: {
+    id: 'COLD_FEET',
+    name: 'Cold Feet',
+    icon: '🥶',
+    tone: 'danger',
+    target: 'none',
+    auto: true,
+    desc: 'Nerves get the better of you — you seize up and cannot bid on the next player. Applies automatically.',
+  },
 }
 
 export const POWER_CARD_LIST = Object.values(POWER_CARDS)
 
 // Draw one random card id. `rng` lets callers inject determinism if needed.
-// `avoid` (a Set/array of ids) is a soft preference — we try to hand out a card
-// the manager isn't already holding so hands don't fill up with duplicates, but
-// fall back to any card once every option is already held.
-export function drawPowerCard(rng = Math.random, avoid = null) {
-  const ids = Object.keys(POWER_CARDS)
-  const avoidSet = avoid instanceof Set ? avoid : avoid ? new Set(avoid) : null
-  const pool = avoidSet ? ids.filter((id) => !avoidSet.has(id)) : ids
-  const from = pool.length ? pool : ids
+//   avoid        (Set/array) soft preference — try not to hand out a card the
+//                manager already holds, so hands don't fill up with duplicates.
+//   exclude      (Set/array) hard block — never draw these (e.g. a card already
+//                dealt the maximum number of times), UNLESS excluding them would
+//                leave nothing to draw, in which case the block is ignored.
+//   playableOnly (bool)      skip auto "curse" cards — used by Wildcard, which
+//                should only ever draw cards you can actually choose to play.
+export function drawPowerCard(rng = Math.random, { avoid = null, exclude = null, playableOnly = false } = {}) {
+  const toSet = (v) => (v instanceof Set ? v : v ? new Set(v) : null)
+  const avoidSet = toSet(avoid)
+  const excludeSet = toSet(exclude)
+
+  let ids = Object.keys(POWER_CARDS)
+  if (playableOnly) ids = ids.filter((id) => !POWER_CARDS[id].auto)
+  // Hard exclusion, but never let it empty the pool.
+  let pool = excludeSet ? ids.filter((id) => !excludeSet.has(id)) : ids
+  if (pool.length === 0) pool = ids
+  // Soft preference: skip in-hand duplicates when we still have other options.
+  const preferred = avoidSet ? pool.filter((id) => !avoidSet.has(id)) : pool
+  const from = preferred.length ? preferred : pool
   return from[Math.floor(rng() * from.length)]
 }

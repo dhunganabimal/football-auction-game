@@ -147,6 +147,20 @@ io.on('connection', (socket) => {
     reply(cb, room.acknowledgePowerRound(socket.data.playerId))
   })
 
+  // Decision-gate pause: fired when a manager opens/closes the card target-picker
+  // so the between-lots countdown can freeze while they choose.
+  socket.on('holdGate', (_p, cb) => {
+    const room = currentRoom(socket)
+    if (!room) return reply(cb, { ok: false, error: 'No room.' })
+    reply(cb, room.holdGate(socket.data.playerId))
+  })
+
+  socket.on('releaseGate', (_p, cb) => {
+    const room = currentRoom(socket)
+    if (!room) return reply(cb, { ok: false, error: 'No room.' })
+    reply(cb, room.releaseGate(socket.data.playerId))
+  })
+
   socket.on('sellNow', (_p, cb) => {
     const room = currentRoom(socket)
     if (!room) return reply(cb, { ok: false, error: 'No room.' })

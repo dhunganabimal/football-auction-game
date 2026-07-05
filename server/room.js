@@ -6,11 +6,14 @@ const STARTING_BID = 1 // $1M opening price for every auction
 const MIN_RESERVE_PER_SPOT = 1 // must keep $1M in reserve per unfilled required spot
 const SNIPE_RESET = 5 // a bid below this many seconds left bumps the clock back to 5s
 const POWER_TRIGGER_EVERY = 10 // power round after every N sold players
-const POWER_ACK_TIMEOUT = 20 // seconds managers get to decide before auto-continuing
+const GATE_COUNTDOWN = 12 // seconds managers get to play a card before the next lot auto-starts
+const COMPOSE_MAX = 45 // safety cap: max seconds the countdown stays paused while someone is mid-selection
 const DEFAULT_AUCTION_SECONDS = 20
 const FREEZE_DURATION = 2 // frozen for the next 2 auctions
-const SHIELD_DURATION = 2 // protected from freeze/steal/raid for the next 2 auctions
 const BARGAIN_DISCOUNT = 0.25 // Bargain card: % knocked off the holder's next win
+const MAX_CARD_DRAWS = 2 // a manager is never dealt the same card more than this many times
+const FINE_PCT = 0.15 // Tax Bill curse: fraction of the drawer's budget deducted
+const COLD_FEET_FREEZE = 1 // Cold Feet curse: frozen for the next N players
 const KICK_VOTE_TIMEOUT = 30 // seconds a vote-to-kick stays open before it lapses
 const MAX_LOG = 40
 const AUTO_DRAW_DELAY = 3500 // ms breather between auctions in random mode
@@ -47,7 +50,9 @@ export class Room {
     this.lastPowerDraw = null // { assignments, at } — kept for late joiners' animation skip
     this.pendingPowerAck = null // Set of playerIds still deciding on a fresh power card
     this.powerGateReason = null // 'round' (just drew) | 'between' (holding cards between lots)
-    this.powerAckTimer = null // auto-continues the auction if someone stalls deciding
+    this.gateSecondsLeft = 0 // visible countdown until the next lot auto-starts (tick-driven)
+    this.gateComposers = new Set() // playerIds with the card target-picker open — pauses the countdown
+    this.gateComposeCap = 0 // safety: seconds the pause may last before we assume they wandered off
     this.awaitingAuto = false // random mode: a draw is scheduled between auctions
     this.autoTimer = null // pending setTimeout handle for the next auto-draw
     this.kickVote = null // { targetId, targetName, startedById, startedByName, votes: Map<id,bool> }
@@ -58,7 +63,6 @@ export class Room {
   destroy() {
     clearInterval(this.timer)
     clearTimeout(this.autoTimer)
-    clearTimeout(this.powerAckTimer)
     clearTimeout(this.kickVoteTimer)
   }
 
@@ -77,8 +81,8 @@ export class Room {
       budget: this.settings.budget,
       squad: [], // { ...fp, price }
       cards: [], // card ids in hand
+      drawCounts: {}, // cardId -> how many times ever dealt to this manager (caps repeats)
       frozen: 0, // auctions remaining frozen
-      shield: 0, // auctions remaining protected from hostile cards
       pendingDiscount: 0, // Bargain card: fraction off the next player they win
       connected: true,
       isHost,
@@ -299,7 +303,8 @@ export class Room {
     return ok()
   }
 
-  openAuction(fp, nominatorId, startPrice, discounted = false) {
+  openAuction(fp, nominatorId, startPrice, opts = {}) {
+    const { discounted = false, mystery = false, mysteryOwnerId = null } = opts
     clearTimeout(this.autoTimer)
     this.autoTimer = null
     this.awaitingAuto = false
@@ -336,6 +341,8 @@ export class Room {
         timeLeft: this.settings.auctionSeconds, // per-turn countdown
         nominatorId,
         discounted,
+        mystery,
+        mysteryOwnerId,
         turnOrder,
         turnPtr: 0,
         turnId: turnOrder[0],
@@ -351,6 +358,8 @@ export class Room {
         timeLeft: this.settings.timerMode === 'host' ? null : this.settings.auctionSeconds,
         nominatorId,
         discounted,
+        mystery,
+        mysteryOwnerId,
         turnOrder: null,
         turnPtr: 0,
         turnId: null,
@@ -358,7 +367,13 @@ export class Room {
       }
     }
     this.broadcast()
-    this.io.to(this.code).emit('auction:new', { fp, discounted })
+    // On a mystery lot, hide who's really up for everyone in the room-wide event
+    // (the owner still sees the real player via their private `mysteryReveal`).
+    this.io.to(this.code).emit('auction:new', {
+      fp: mystery ? mysteryFp(fp) : fp,
+      discounted,
+      mystery,
+    })
   }
 
   // ---- turn-based (circular) bidding --------------------------------------
@@ -465,7 +480,12 @@ export class Room {
   }
 
   tick() {
-    if (this.status !== 'auction' || !this.current) return
+    if (this.status !== 'auction') return
+    // Between lots, drive the power-card decision gate's countdown instead.
+    if (!this.current) {
+      if (this.pendingPowerAck) this.tickGate()
+      return
+    }
     if (this.settings.biddingMode === 'turns') {
       if (this.current.timeLeft == null) return
       this.current.timeLeft -= 1
@@ -547,7 +567,6 @@ export class Room {
     // One "player" has passed — wind down every temporary status by a tick.
     for (const p of this.players.values()) {
       if (p.frozen > 0) p.frozen -= 1
-      if (p.shield > 0) p.shield -= 1
     }
   }
 
@@ -575,34 +594,109 @@ export class Room {
 
   // ---- power cards --------------------------------------------------------
   triggerPowerRound() {
-    const assignments = {}
-    for (const p of this.connectedPlayers()) {
-      // Prefer a card the manager isn't already holding so repeats are rarer.
-      const card = drawPowerCard(Math.random, new Set(p.cards))
-      p.cards.push(card)
-      assignments[p.id] = { nickname: p.nickname, card }
+    const drew = this.connectedPlayers()
+    const assignments = {} // playable cards that actually landed in a hand
+    const curses = [] // { player, def } auto "curse" cards to spring after the banner
+    for (const p of drew) {
+      const card = this.drawCardFor(p)
+      const def = POWER_CARDS[card]
+      if (def.auto) {
+        curses.push({ player: p, def }) // never enters the hand — resolved below
+      } else {
+        p.cards.push(card)
+        assignments[p.id] = { nickname: p.nickname, card }
+      }
     }
     this.lastPowerDraw = { assignments }
-    this.pushLog('power', `⚡ Power Card Round! ${this.connectedPlayers().length} managers drew a card.`)
-    // Reveal each manager's own card privately; broadcast that a round happened.
+    this.pushLog('power', `⚡ Power Card Round! ${drew.length} managers drew a card.`)
+    // Announce the round, then reveal each manager's own playable card privately.
     this.io.to(this.code).emit('power:round', {
-      players: Object.entries(assignments).map(([id, a]) => ({ id, nickname: a.nickname })),
+      players: drew.map((p) => ({ id: p.id, nickname: p.nickname })),
     })
-    for (const p of this.connectedPlayers()) {
-      this.io.to(p.socketId).emit('power:card', { card: POWER_CARDS[assignments[p.id].card] })
+    for (const [id, a] of Object.entries(assignments)) {
+      const p = this.players.get(id)
+      if (p?.connected) this.io.to(p.socketId).emit('power:card', { card: POWER_CARDS[a.card] })
     }
+    // Spring any curse cards — they hit their drawer immediately and are
+    // announced to the whole room (lost cash / a released player / a freeze).
+    for (const { player, def } of curses) this.applyAutoCard(player, def)
 
     // Gate the next auction: nobody goes up for sale again until every
-    // manager who just drew a card has either played it or explicitly chosen
-    // to hold onto it for later.
+    // manager still HOLDING a card has either played it or chosen to keep it.
     this.openDecisionGate('round')
     this.broadcast()
   }
 
+  // Deal one card to a manager, respecting the per-manager repeat cap: a card is
+  // never dealt again until every other candidate has been dealt at least as
+  // often. Normally that just means excluding anything already at MAX_CARD_DRAWS;
+  // once the whole deck is capped it means dealing only the least-seen cards, so
+  // the distribution stays flat and nothing repeats early. Cards already in hand
+  // are softly avoided. This is what stops the "same card again and again" feel.
+  drawCardFor(player, { playableOnly = false } = {}) {
+    if (!player.drawCounts) player.drawCounts = {}
+    const count = (id) => player.drawCounts[id] || 0
+    let ids = Object.keys(POWER_CARDS)
+    if (playableOnly) ids = ids.filter((id) => !POWER_CARDS[id].auto)
+    // Raise the ceiling only once every card has reached it, so no card ever gets
+    // an (n+1)th copy before all cards have n copies. The least-drawn cards are
+    // therefore never excluded, so there's always something legal to deal.
+    const min = Math.min(...ids.map(count))
+    const ceiling = Math.max(MAX_CARD_DRAWS, min + 1)
+    const exclude = ids.filter((id) => count(id) >= ceiling)
+    const card = drawPowerCard(Math.random, {
+      avoid: new Set(player.cards),
+      exclude,
+      playableOnly,
+    })
+    player.drawCounts[card] = count(card) + 1
+    return card
+  }
+
+  // Auto "curse" cards: applied the instant they're drawn, never held. Every
+  // effect here is self-inflicted and negative, so nobody picks a target.
+  applyAutoCard(player, def) {
+    switch (def.id) {
+      case 'FINE': {
+        const amount = Math.min(player.budget, Math.max(1, Math.round(player.budget * FINE_PCT)))
+        if (amount <= 0) {
+          this.announcePower(player, def, `drew a 🧾 Tax Bill but had nothing left to pay`)
+          return
+        }
+        player.budget -= amount
+        this.announcePower(player, def, `was hit with a 🧾 Tax Bill — lost ${amount}M`)
+        return
+      }
+      case 'INJURY': {
+        if (player.squad.length === 0) {
+          this.announcePower(player, def, `dodged an 🚑 Injury Blow — no players to lose`)
+          return
+        }
+        const fp = player.squad.pop() // their most recent signing
+        player.budget += fp.price // refunded what they paid — they lose the player, not the cash
+        this.pool.push(stripPrice(fp))
+        this.announcePower(player, def, `lost ${fp.name} to an 🚑 injury — released back to the pool`)
+        return
+      }
+      case 'COLD_FEET': {
+        player.frozen = Math.max(player.frozen, COLD_FEET_FREEZE)
+        this.announcePower(
+          player,
+          def,
+          `got 🥶 Cold Feet — frozen for the next ${COLD_FEET_FREEZE} player${COLD_FEET_FREEZE === 1 ? '' : 's'}`,
+        )
+        return
+      }
+      default:
+        return
+    }
+  }
+
   // Pause between lots and prompt every manager still holding a card to decide
   // whether to play one before the next player goes up. Returns true if a gate
-  // was opened (i.e. someone actually holds a card). A timeout auto-continues in
-  // case someone wanders off, so the room can't stall forever.
+  // was opened (i.e. someone actually holds a card). A visible countdown
+  // (tick-driven, see tickGate) auto-continues in case someone wanders off, so
+  // the room can't stall forever.
   //   reason: 'round'   -> a power-card round just dealt everyone a fresh card
   //           'between' -> ordinary lot resolved; card holders get a play window
   openDecisionGate(reason) {
@@ -610,9 +704,53 @@ export class Room {
     if (holders.length === 0) return false
     this.pendingPowerAck = new Set(holders.map((p) => p.id))
     this.powerGateReason = reason
-    clearTimeout(this.powerAckTimer)
-    this.powerAckTimer = setTimeout(() => this.resolvePowerGate(), POWER_ACK_TIMEOUT * 1000)
+    this.gateSecondsLeft = GATE_COUNTDOWN
+    this.gateComposers = new Set()
+    this.gateComposeCap = 0
     return true
+  }
+
+  // Runs once a second (from tick) while a decision gate is open and no auction
+  // is live. Counts down to the next auto-started lot — but freezes while anyone
+  // has the card target-picker open, so the auction never starts out from under
+  // a manager mid-play. The freeze is capped (COMPOSE_MAX) so an abandoned
+  // picker can't stall the room forever.
+  tickGate() {
+    if (this.gateComposers.size > 0) {
+      this.gateComposeCap -= 1
+      if (this.gateComposeCap > 0) {
+        this.io.to(this.code).emit('gate:tick', { secondsLeft: this.gateSecondsLeft, paused: true })
+        return
+      }
+      // Held too long — assume they walked away, drop the hold and resume.
+      this.gateComposers = new Set()
+      this.broadcast()
+      return
+    }
+    this.gateSecondsLeft -= 1
+    if (this.gateSecondsLeft <= 0) {
+      this.resolvePowerGate()
+    } else {
+      this.io.to(this.code).emit('gate:tick', { secondsLeft: this.gateSecondsLeft, paused: false })
+    }
+  }
+
+  // A manager opened the card target-picker — pause the countdown so the next
+  // lot can't start while they choose, and let everyone see who's deciding.
+  holdGate(playerId) {
+    if (!this.pendingPowerAck?.has(playerId)) return err('No decision window is open for you.')
+    this.gateComposers.add(playerId)
+    this.gateComposeCap = COMPOSE_MAX
+    this.broadcast()
+    return ok()
+  }
+
+  // They closed the picker (played a card or backed out) — release the pause.
+  releaseGate(playerId) {
+    if (!this.gateComposers.has(playerId)) return ok()
+    this.gateComposers.delete(playerId)
+    this.broadcast()
+    return ok()
   }
 
   // A manager confirms they're done deciding for this power round — whether
@@ -627,10 +765,14 @@ export class Room {
 
   checkPowerGate() {
     if (!this.pendingPowerAck) return
-    // Drop anyone who has since disconnected so they can't stall the room.
+    // Drop anyone who has since disconnected so they can't stall the room —
+    // whether they were still deciding or holding the picker open (pausing it).
     for (const id of [...this.pendingPowerAck]) {
       const p = this.players.get(id)
-      if (!p || !p.connected) this.pendingPowerAck.delete(id)
+      if (!p || !p.connected) {
+        this.pendingPowerAck.delete(id)
+        this.gateComposers.delete(id)
+      }
     }
     if (this.pendingPowerAck.size === 0) this.resolvePowerGate()
     else this.broadcast()
@@ -638,10 +780,11 @@ export class Room {
 
   resolvePowerGate() {
     if (!this.pendingPowerAck) return
-    clearTimeout(this.powerAckTimer)
-    this.powerAckTimer = null
     this.pendingPowerAck = null
     this.powerGateReason = null
+    this.gateSecondsLeft = 0
+    this.gateComposers = new Set()
+    this.gateComposeCap = 0
     this.advanceOrSchedule()
     this.broadcast()
   }
@@ -681,7 +824,6 @@ export class Room {
       case 'BID_FREEZE': {
         const victim = this.players.get(target.opponentId)
         if (!victim || victim.id === player.id) return err('Pick a valid opponent to freeze.')
-        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ and can't be frozen.`)
         victim.frozen = FREEZE_DURATION
         this.announcePower(player, def, `froze ${victim.nickname} 🧊 for ${FREEZE_DURATION} players`)
         return ok()
@@ -692,23 +834,16 @@ export class Room {
         this.announcePower(player, def, `thawed out 🌤️ and can bid again`)
         return ok()
       }
-      case 'SHIELD': {
-        player.shield = SHIELD_DURATION
-        this.announcePower(player, def, `raised a 🛡️ Shield for the next ${SHIELD_DURATION} players`)
-        return ok()
-      }
       case 'FREEZE_ALL': {
         const others = this.connectedPlayers().filter((o) => o.id !== player.id)
-        const hit = others.filter((o) => o.shield === 0)
-        if (hit.length === 0) return err('No opponents can be frozen right now.')
-        for (const o of hit) o.frozen = Math.max(o.frozen, 1)
-        this.announcePower(player, def, `unleashed a Cold Snap ❄️ — froze ${hit.length} rival${hit.length === 1 ? '' : 's'} for the next player`)
+        if (others.length === 0) return err('No opponents can be frozen right now.')
+        for (const o of others) o.frozen = Math.max(o.frozen, 1)
+        this.announcePower(player, def, `unleashed a Cold Snap ❄️ — froze ${others.length} rival${others.length === 1 ? '' : 's'} for the next player`)
         return ok()
       }
       case 'RAID': {
         const victim = this.players.get(target.opponentId)
         if (!victim || victim.id === player.id) return err('Pick a valid opponent to raid.')
-        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ and can't be raided.`)
         const amount = Math.min(victim.budget, 10)
         if (amount <= 0) return err(`${victim.nickname} has no budget left to raid.`)
         victim.budget -= amount
@@ -725,10 +860,20 @@ export class Room {
         this.announcePower(player, def, `opened a Mystery Box 🎁 and signed ${fp.name} (${fp.position}) for free`)
         return ok()
       }
+      case 'MYSTERY_AUCTION': {
+        if (this.pool.length === 0) return err('The player pool is empty — nothing to auction.')
+        const idx = Math.floor(Math.random() * this.pool.length)
+        const [fp] = this.pool.splice(idx, 1)
+        // Everyone bids blind; only the caller sees who it is (via mysteryReveal).
+        // The lot resolves like any other — the winner gets the real player and
+        // their identity is revealed to the room on sale.
+        this.announcePower(player, def, `sent a mystery player to the block 🎭 — only they know who it is`)
+        this.openAuction(fp, player.id, STARTING_BID, { mystery: true, mysteryOwnerId: player.id })
+        return ok()
+      }
       case 'STEAL': {
         const victim = this.players.get(target.ownerId)
         if (!victim || victim.id === player.id) return err('Pick another manager.')
-        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't take their players.`)
         const idx = victim.squad.findIndex((s) => s.id === target.fpId)
         if (idx === -1) return err('That player is not in their squad anymore.')
         if (player.squad.length >= this.settings.squadSize) return err('Your squad is full.')
@@ -740,7 +885,6 @@ export class Room {
       case 'FORCED_RELEASE': {
         const victim = this.players.get(target.ownerId)
         if (!victim || victim.id === player.id) return err('Pick another manager.')
-        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't force a release.`)
         const idx = victim.squad.findIndex((s) => s.id === target.fpId)
         if (idx === -1) return err('That player is not in their squad anymore.')
         const [fp] = victim.squad.splice(idx, 1)
@@ -756,7 +900,7 @@ export class Room {
         player.budget += fp.price // refunded now; re-earns on resale
         const startPrice = Math.max(STARTING_BID, Math.round(fp.price * 0.5))
         this.announcePower(player, def, `put ${fp.name} on a 🔥 Fire Sale (from ${startPrice}M)`)
-        this.openAuction(stripPrice(fp), player.id, startPrice, true)
+        this.openAuction(stripPrice(fp), player.id, startPrice, { discounted: true })
         return ok()
       }
       case 'POSITION_SWAP': {
@@ -764,7 +908,6 @@ export class Room {
         if (mineIdx === -1) return err('Pick one of your own players to trade away.')
         const victim = this.players.get(target.ownerId)
         if (!victim || victim.id === player.id) return err('Pick another manager to swap with.')
-        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't swap with them.`)
         const theirIdx = victim.squad.findIndex((s) => s.id === target.theirFpId)
         if (theirIdx === -1) return err('That player is not in their squad anymore.')
         const mine = player.squad[mineIdx]
@@ -781,7 +924,6 @@ export class Room {
       case 'POACH': {
         const victim = this.players.get(target.ownerId)
         if (!victim || victim.id === player.id) return err('Pick another manager to poach from.')
-        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't poach from them.`)
         const idx = victim.squad.findIndex((s) => s.id === target.fpId)
         if (idx === -1) return err('That player is not in their squad anymore.')
         if (player.squad.length >= this.settings.squadSize) return err('Your squad is full.')
@@ -805,10 +947,13 @@ export class Room {
         return ok()
       }
       case 'WILDCARD': {
-        // The played WILDCARD itself is spliced out by usePowerCard() after this
-        // returns, so avoid the remaining hand (minus this card) when redrawing.
-        const held = new Set(player.cards.filter((c) => c !== def.id))
-        const drawn = [drawPowerCard(Math.random, held), drawPowerCard(Math.random, held)]
+        // Draw two fresh PLAYABLE cards (never a curse), honoring the per-manager
+        // repeat cap. The played WILDCARD is spliced from the hand by usePowerCard()
+        // after this returns.
+        const drawn = [
+          this.drawCardFor(player, { playableOnly: true }),
+          this.drawCardFor(player, { playableOnly: true }),
+        ]
         player.cards.push(...drawn)
         const names = drawn.map((id) => POWER_CARDS[id].name).join(' & ')
         this.announcePower(player, def, `played a 🎲 Wildcard and drew ${names}`)
@@ -835,6 +980,9 @@ export class Room {
       byName: player.nickname,
       card: def,
       text,
+      // Auto "curse" cards fire during the power-round burst where the big
+      // overlay gets clobbered — the client surfaces these as a toast instead.
+      auto: !!def.auto,
     })
   }
 
@@ -1054,7 +1202,6 @@ export class Room {
       squadCount: p.squad.length,
       cardCount: p.cards.length,
       frozen: p.frozen,
-      shield: p.shield,
       connected: p.connected,
       isHost: p.isHost,
       complete: this.squadComplete(p),
@@ -1078,13 +1225,17 @@ export class Room {
       skippedPositions: this.positionCounts(this.skippedPool),
       current: this.current
         ? {
-            fp: this.current.fp,
+            // Mystery lots are redacted in the shared state — only the caller
+            // learns who's really up, via their private `mysteryReveal`.
+            fp: this.current.mystery ? mysteryFp(this.current.fp) : this.current.fp,
             price: this.current.price,
             bidderId: this.current.bidderId,
             bidderName: this.current.bidderName,
             timeLeft: this.current.timeLeft,
             nominatorId: this.current.nominatorId,
             discounted: this.current.discounted,
+            mystery: !!this.current.mystery,
+            mysteryOwnerId: this.current.mysteryOwnerId ?? null,
             minBid: this.minAcceptableBid(),
             biddingMode: this.settings.biddingMode,
             turnId: this.current.turnId,
@@ -1095,7 +1246,13 @@ export class Room {
       players: this.order.map((id) => this.publicPlayer(this.players.get(id))).filter(Boolean),
       log: this.log.slice(-30),
       powerGate: this.pendingPowerAck
-        ? { pending: [...this.pendingPowerAck], reason: this.powerGateReason }
+        ? {
+            pending: [...this.pendingPowerAck],
+            reason: this.powerGateReason,
+            secondsLeft: this.gateSecondsLeft,
+            paused: this.gateComposers.size > 0,
+            composing: [...this.gateComposers].map((id) => this.players.get(id)?.nickname).filter(Boolean),
+          }
         : null,
       kickVote: this.kickVote ? this.publicKickVote() : null,
     }
@@ -1125,14 +1282,16 @@ export class Room {
   }
 
   privateFor(player) {
+    const cur = this.current
     return {
       id: player.id,
       isHost: player.isHost,
       cards: player.cards.map((c) => POWER_CARDS[c]),
       maxBid: this.maxBid(player),
       frozen: player.frozen,
-      shield: player.shield,
       pendingDiscount: player.pendingDiscount,
+      // The manager who called a Mystery Auction alone sees who's really up.
+      mysteryReveal: cur && cur.mystery && cur.mysteryOwnerId === player.id ? cur.fp : null,
     }
   }
 
@@ -1157,6 +1316,11 @@ function clamp(n, lo, hi) {
 function stripPrice(fp) {
   const { price, ...rest } = fp
   return rest
+}
+// A fully-redacted stand-in for a mystery lot: same id (so client keys/refs stay
+// stable) but no identifying details until the player is sold and revealed.
+function mysteryFp(fp) {
+  return { id: fp.id, name: '???', club: '???', position: '??', rating: null, photo: null, mystery: true }
 }
 function ok() {
   return { ok: true }

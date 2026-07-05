@@ -25,6 +25,12 @@ export default function PowerCardGate() {
   const cards = me?.cards || []
   const othersLeft = gate.pending.length - 1
   const isRound = gate.reason === 'round'
+  const secondsLeft = gate.secondsLeft ?? null
+  // Someone (possibly you) has the target-picker open — the countdown is frozen.
+  const paused = gate.paused
+  const myNick = state.players.find((p) => p.id === playerId)?.nickname
+  const composing = (gate.composing || []).filter((n) => n !== myNick)
+  const urgent = !paused && secondsLeft != null && secondsLeft <= 3
 
   return (
     <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
@@ -67,7 +73,27 @@ export default function PowerCardGate() {
           <p className="mt-4 text-center text-sm text-slate-500">You have no cards to play right now.</p>
         )}
 
-        <button className="btn-primary mt-5 w-full py-3 text-lg" onClick={() => actions.acknowledgePowerRound()}>
+        {/* Countdown to the auto-start — or a paused banner while someone picks. */}
+        <div className="mt-4 text-center text-sm">
+          {paused ? (
+            <span className="inline-flex items-center gap-2 rounded-full bg-fuchsia-500/15 px-3 py-1 font-medium text-fuchsia-200">
+              ⏸ {composing.length > 0
+                ? `${composing.join(', ')} ${composing.length === 1 ? 'is' : 'are'} playing a card…`
+                : 'Playing a card…'}
+            </span>
+          ) : secondsLeft != null ? (
+            <span
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 font-semibold ${
+                urgent ? 'animate-pulse bg-neon-pink/20 text-neon-pink' : 'bg-white/5 text-slate-300'
+              }`}
+            >
+              ⏱ Next auction {isRound ? 'starts' : 'in'}{' '}
+              <span className="font-display text-base">{Math.max(0, secondsLeft)}s</span>
+            </span>
+          ) : null}
+        </div>
+
+        <button className="btn-primary mt-3 w-full py-3 text-lg" onClick={() => actions.acknowledgePowerRound()}>
           {isRound ? '🚀 Start Next Auction' : '▶ Continue Auction'}
         </button>
         {othersLeft > 0 && (
