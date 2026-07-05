@@ -5,10 +5,11 @@ import { Avatar } from '../pages/Lobby.jsx'
 import PlayerAvatar from './PlayerAvatar.jsx'
 import SquadTracker from './SquadTracker.jsx'
 import FormationPitch from './FormationPitch.jsx'
+import FormationBuilder from './FormationBuilder.jsx'
 
 // Final standings. Ranked by: complete squad first, then squad rating total.
 export default function EndScreen() {
-  const { state, actions } = useGame()
+  const { state, actions, playerId } = useGame()
   const [view, setView] = useState('pitch') // 'pitch' | 'list'
 
   const squadRating = (p) => p.squad.reduce((n, s) => n + s.rating, 0)
@@ -64,9 +65,19 @@ export default function EndScreen() {
               </div>
             </div>
 
+            {p.id === playerId && (
+              <div className="mt-2 rounded-lg bg-neon-green/10 px-3 py-1.5 text-xs text-neon-green">
+                ⚽ This is your squad — pick a formation and drag players between the XI and the bench.
+              </div>
+            )}
+
             <div className="mt-3">
               {view === 'pitch' ? (
-                <FormationPitch squad={p.squad} />
+                p.id === playerId ? (
+                  <FormationBuilder squad={p.squad} storageKey={`fa_formation_${state.code}_${p.id}`} />
+                ) : (
+                  <FormationPitch squad={p.squad} />
+                )
               ) : (
                 <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4">
                   {p.squad.map((s) => (

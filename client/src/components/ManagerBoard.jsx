@@ -62,6 +62,7 @@ export default function ManagerBoard() {
                   {nominating && <span className="chip bg-neon-cyan/20 text-neon-cyan">nominating</span>}
                   {leading && <span className="chip bg-neon-green/20 text-neon-green animate-glow-pulse">leading</span>}
                   {p.frozen > 0 && <span className="chip bg-sky-400/20 text-sky-200">🧊 {p.frozen}</span>}
+                  {p.shield > 0 && <span className="chip bg-emerald-400/20 text-emerald-200">🛡️ {p.shield}</span>}
                   {p.cardCount > 0 && <span className="chip bg-neon-gold/20 text-neon-gold">🃏 {p.cardCount}</span>}
                   {p.complete && <span className="chip bg-neon-green/20 text-neon-green">✓ set</span>}
                 </div>

@@ -49,8 +49,8 @@ export default function AuctionBlock() {
             <Stat
               key={cur.price}
               label="Current Bid"
-              value={<span className="animate-pop-in inline-block">{fmtM(cur.price)}</span>}
-              accent="text-gradient"
+              value={<span className="animate-count-pop inline-block">{fmtM(cur.price)}</span>}
+              accent="text-gold"
             />
             <Stat
               label="Highest Bidder"
@@ -76,7 +76,7 @@ export default function AuctionBlock() {
                 <circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="8" />
                 <circle
                   cx="50" cy="50" r="44" fill="none"
-                  stroke={danger ? '#ff4d8d' : '#39ff88'}
+                  stroke={danger ? '#e0729a' : '#34d399'}
                   strokeWidth="8"
                   strokeLinecap="round"
                   strokeDasharray={2 * Math.PI * 44}

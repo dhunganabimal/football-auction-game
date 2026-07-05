@@ -9,6 +9,7 @@ const POWER_TRIGGER_EVERY = 10 // power round after every N sold players
 const POWER_ACK_TIMEOUT = 20 // seconds managers get to decide before auto-continuing
 const DEFAULT_AUCTION_SECONDS = 20
 const FREEZE_DURATION = 2 // frozen for the next 2 auctions
+const SHIELD_DURATION = 2 // protected from freeze/steal/raid for the next 2 auctions
 const MAX_LOG = 40
 const AUTO_DRAW_DELAY = 3500 // ms breather between auctions in random mode
 const AUTO_START_DELAY = 1500 // ms before the very first random draw
@@ -33,6 +34,7 @@ export class Room {
     this.pool = freshPool() // available football players
     this.status = 'lobby' // lobby | auction | ended
     this.nominatorIndex = 0
+    this.bidRotation = 0 // turn-based: which seat gets first dibs, rotates per lot
     this.current = null // active auction
     this.soldCount = 0
     this.log = []
@@ -67,6 +69,7 @@ export class Room {
       squad: [], // { ...fp, price }
       cards: [], // card ids in hand
       frozen: 0, // auctions remaining frozen
+      shield: 0, // auctions remaining protected from hostile cards
       connected: true,
       isHost,
     }
@@ -253,17 +256,29 @@ export class Room {
     this.autoTimer = null
     this.awaitingAuto = false
     const turns = this.settings.biddingMode === 'turns'
+    const eligible = this.eligibleBidders()
+
+    // Nobody can legally bid on this lot right now — everyone is either frozen
+    // or has a full squad. Don't stall the room on a timer/turn nobody can
+    // answer: tick the freeze counters (a skipped lot still counts as a passed
+    // "player" for freeze purposes), return the lot to the pool, and move on.
+    // This is what breaks a mutual-freeze standoff — e.g. one full squad plus
+    // two managers who froze each other — instead of looping forever.
+    if (eligible.length === 0) {
+      this.pool.push(fp)
+      this.pushLog('skip', `${fp.name} was skipped (no eligible bidders) and returns to the pool.`)
+      this.tickFreezes()
+      this.io.to(this.code).emit('auction:skipped', { fp })
+      this.advanceOrSchedule()
+      this.broadcast()
+      return
+    }
 
     if (turns) {
-      const turnOrder = this.eligibleBidders()
-      if (turnOrder.length === 0) {
-        // Nobody can bid on this lot — return it straight to the pool.
-        this.pool.push(fp)
-        this.pushLog('skip', `${fp.name} was skipped (no eligible bidders) and returns to the pool.`)
-        this.advanceOrSchedule()
-        this.broadcast()
-        return
-      }
+      // Start this lot's turn order from the rotating seat, then advance the
+      // rotation so the next lot's opening bidder is the following manager.
+      const turnOrder = this.eligibleBidders(this.bidRotation)
+      this.bidRotation = (this.bidRotation + 1) % this.order.length
       this.current = {
         fp,
         price: startPrice,
@@ -302,9 +317,14 @@ export class Room {
     return !!(p && p.connected && p.frozen === 0 && p.squad.length < this.settings.squadSize)
   }
 
-  eligibleBidders() {
-    // Managers who can legally bid on a lot, in seating order (player 1 first).
-    return this.order.filter((id) => this.isBidderLive(id))
+  eligibleBidders(start = 0) {
+    // Managers who can legally bid on a lot, in seating order but starting from
+    // seat `start` and wrapping around — so the manager who bids first can be
+    // rotated from one lot to the next instead of always being player 1.
+    const n = this.order.length
+    if (n === 0) return []
+    const rotated = Array.from({ length: n }, (_, i) => this.order[(start + i) % n])
+    return rotated.filter((id) => this.isBidderLive(id))
   }
 
   // Resolve or hand the turn to the next contender. Called after every bid/pass.
@@ -422,7 +442,6 @@ export class Room {
   resolveAuction() {
     const cur = this.current
     this.current = null
-    let powerRoundTriggered = false
     if (cur.bidderId) {
       const buyer = this.players.get(cur.bidderId)
       buyer.budget -= cur.price
@@ -437,8 +456,7 @@ export class Room {
       })
       this.tickFreezes()
       if (this.soldCount % POWER_TRIGGER_EVERY === 0) {
-        this.triggerPowerRound()
-        powerRoundTriggered = true
+        this.triggerPowerRound() // draws cards and opens a 'round' decision gate
       }
     } else {
       // Nobody bid — return to the pool so it can resurface later.
@@ -450,10 +468,10 @@ export class Room {
     // Hold the next lot until every manager has confirmed they're done deciding
     // whether to play a card — see openDecisionGate() / resolvePowerGate(). This
     // is what stops someone's card decision from colliding with (and losing them
-    // a shot at) the next player already going up for auction.
-    //   - a power round just fired -> triggerPowerRound() already opened the gate
-    //   - otherwise, prompt anyone still holding a card between this lot and the next
-    if (powerRoundTriggered || this.openDecisionGate('between')) {
+    // a shot at) the next player already going up for auction. A power round may
+    // have already opened a 'round' gate above (pendingPowerAck set); otherwise
+    // prompt anyone still holding a card between this lot and the next.
+    if (this.pendingPowerAck || this.openDecisionGate('between')) {
       this.broadcast()
       return
     }
@@ -462,7 +480,11 @@ export class Room {
   }
 
   tickFreezes() {
-    for (const p of this.players.values()) if (p.frozen > 0) p.frozen -= 1
+    // One "player" has passed — wind down every temporary status by a tick.
+    for (const p of this.players.values()) {
+      if (p.frozen > 0) p.frozen -= 1
+      if (p.shield > 0) p.shield -= 1
+    }
   }
 
   // ---- host auctioneer (only when timerMode === 'host') -------------------
@@ -491,7 +513,8 @@ export class Room {
   triggerPowerRound() {
     const assignments = {}
     for (const p of this.connectedPlayers()) {
-      const card = drawPowerCard()
+      // Prefer a card the manager isn't already holding so repeats are rarer.
+      const card = drawPowerCard(Math.random, new Set(p.cards))
       p.cards.push(card)
       assignments[p.id] = { nickname: p.nickname, card }
     }
@@ -594,13 +617,54 @@ export class Room {
       case 'BID_FREEZE': {
         const victim = this.players.get(target.opponentId)
         if (!victim || victim.id === player.id) return err('Pick a valid opponent to freeze.')
+        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ and can't be frozen.`)
         victim.frozen = FREEZE_DURATION
         this.announcePower(player, def, `froze ${victim.nickname} 🧊 for ${FREEZE_DURATION} players`)
+        return ok()
+      }
+      case 'THAW': {
+        if (player.frozen === 0) return err('You are not frozen right now.')
+        player.frozen = 0
+        this.announcePower(player, def, `thawed out 🌤️ and can bid again`)
+        return ok()
+      }
+      case 'SHIELD': {
+        player.shield = SHIELD_DURATION
+        this.announcePower(player, def, `raised a 🛡️ Shield for the next ${SHIELD_DURATION} players`)
+        return ok()
+      }
+      case 'FREEZE_ALL': {
+        const others = this.connectedPlayers().filter((o) => o.id !== player.id)
+        const hit = others.filter((o) => o.shield === 0)
+        if (hit.length === 0) return err('No opponents can be frozen right now.')
+        for (const o of hit) o.frozen = Math.max(o.frozen, 1)
+        this.announcePower(player, def, `unleashed a Cold Snap ❄️ — froze ${hit.length} rival${hit.length === 1 ? '' : 's'} for the next player`)
+        return ok()
+      }
+      case 'RAID': {
+        const victim = this.players.get(target.opponentId)
+        if (!victim || victim.id === player.id) return err('Pick a valid opponent to raid.')
+        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ and can't be raided.`)
+        const amount = Math.min(victim.budget, 10)
+        if (amount <= 0) return err(`${victim.nickname} has no budget left to raid.`)
+        victim.budget -= amount
+        player.budget += amount
+        this.announcePower(player, def, `raided ${amount}M from ${victim.nickname} 💸`)
+        return ok()
+      }
+      case 'MYSTERY_BOX': {
+        if (player.squad.length >= this.settings.squadSize) return err('Your squad is already full.')
+        if (this.pool.length === 0) return err('The player pool is empty.')
+        const idx = Math.floor(Math.random() * this.pool.length)
+        const [fp] = this.pool.splice(idx, 1)
+        player.squad.push({ ...fp, price: 0 })
+        this.announcePower(player, def, `opened a Mystery Box 🎁 and signed ${fp.name} (${fp.position}) for free`)
         return ok()
       }
       case 'STEAL': {
         const victim = this.players.get(target.ownerId)
         if (!victim || victim.id === player.id) return err('Pick another manager.')
+        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't take their players.`)
         const idx = victim.squad.findIndex((s) => s.id === target.fpId)
         if (idx === -1) return err('That player is not in their squad anymore.')
         if (player.squad.length >= this.settings.squadSize) return err('Your squad is full.')
@@ -612,6 +676,7 @@ export class Room {
       case 'FORCED_RELEASE': {
         const victim = this.players.get(target.ownerId)
         if (!victim || victim.id === player.id) return err('Pick another manager.')
+        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't force a release.`)
         const idx = victim.squad.findIndex((s) => s.id === target.fpId)
         if (idx === -1) return err('That player is not in their squad anymore.')
         const [fp] = victim.squad.splice(idx, 1)
@@ -690,6 +755,7 @@ export class Room {
       squadCount: p.squad.length,
       cardCount: p.cards.length,
       frozen: p.frozen,
+      shield: p.shield,
       connected: p.connected,
       isHost: p.isHost,
       complete: this.squadComplete(p),
@@ -706,6 +772,7 @@ export class Room {
       awaitingAuto: this.awaitingAuto,
       soldCount: this.soldCount,
       poolCount: this.pool.length,
+      poolPositions: this.positionCounts(this.pool),
       pool: this.pool,
       current: this.current
         ? {
@@ -738,6 +805,7 @@ export class Room {
       cards: player.cards.map((c) => POWER_CARDS[c]),
       maxBid: this.maxBid(player),
       frozen: player.frozen,
+      shield: player.shield,
     }
   }
 

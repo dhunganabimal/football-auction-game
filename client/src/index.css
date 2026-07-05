@@ -13,12 +13,32 @@ body,
 }
 
 body {
-  @apply bg-pitch-950 text-slate-100 font-body antialiased;
+  @apply bg-pitch-950 text-sand font-body antialiased;
   background-image:
-    radial-gradient(circle at 15% 0%, rgba(57, 255, 136, 0.08), transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(37, 229, 255, 0.06), transparent 45%),
-    linear-gradient(180deg, #04140c 0%, #061a0e 60%, #04120a 100%);
+    radial-gradient(circle at 15% -5%, rgba(52, 211, 153, 0.07), transparent 42%),
+    radial-gradient(circle at 85% 12%, rgba(232, 194, 106, 0.06), transparent 46%),
+    linear-gradient(180deg, #06120d 0%, #08180f 55%, #05100a 100%);
   background-attachment: fixed;
+}
+
+/* Raw keyframes for effects driven by plain CSS (not a Tailwind animate-*
+   utility), so they are always emitted regardless of class usage. */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-150%) skewX(-12deg);
+  }
+  100% {
+    transform: translateX(250%) skewX(-12deg);
+  }
+}
+@keyframes gradient-x {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 /* Subtle pitch stripes for panels that opt in */
@@ -34,7 +54,8 @@ body {
 
 @layer components {
   .panel {
-    @apply rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-sm shadow-lg;
+    @apply rounded-2xl border border-white/[0.08] bg-white/[0.035] backdrop-blur-md
+           shadow-[0_8px_30px_-12px_rgba(0,0,0,0.6)];
   }
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-display font-semibold
@@ -59,18 +80,35 @@ body {
   .label {
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400;
   }
-  /* Neon gradient clipped to text — for headings/values that should pop. */
+  /* Emerald→gold gradient clipped to text — for headings/values that should pop. */
   .text-gradient {
-    @apply bg-gradient-to-r from-neon-green via-neon-cyan to-neon-green bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-neon-green via-neon-gold to-neon-green bg-clip-text text-transparent;
+    background-size: 200% auto;
+    @apply animate-gradient-x;
+  }
+  /* Warm gold text gradient — for money / premium values. */
+  .text-gold {
+    @apply bg-gradient-to-r from-neon-gold via-amber-200 to-neon-gold bg-clip-text text-transparent;
     background-size: 200% auto;
     @apply animate-gradient-x;
   }
   /* Big call-to-action button with an animated gradient fill + moving sheen. */
   .btn-hero {
     @apply btn relative overflow-hidden text-pitch-950;
-    background-image: linear-gradient(110deg, #39ff88, #25e5ff, #c6ff4d, #39ff88);
+    background-image: linear-gradient(110deg, #34d399, #e8c26a, #a7f3d0, #34d399);
     background-size: 220% auto;
     @apply animate-gradient-x hover:brightness-110 active:scale-95;
+  }
+  /* Elegant gold pill — for the current high bidder / money accents. */
+  .shimmer-gold {
+    background-image: linear-gradient(
+      100deg,
+      rgba(232, 194, 106, 0.18) 25%,
+      rgba(255, 235, 190, 0.5) 50%,
+      rgba(232, 194, 106, 0.18) 75%
+    );
+    background-size: 200% 100%;
+    @apply animate-shine;
   }
 }
 
@@ -101,9 +139,9 @@ body {
   inset: -1px;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(120deg, #39ff88, #25e5ff, #ff4d8d, #ffd24a, #39ff88);
+  background: linear-gradient(120deg, #34d399, #5eead4, #e8c26a, #34d399);
   background-size: 300% 300%;
-  animation: gradient-x 5s ease infinite;
+  animation: gradient-x 6s ease infinite;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;

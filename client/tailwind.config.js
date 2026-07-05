@@ -5,25 +5,29 @@ export default {
     extend: {
       colors: {
         pitch: {
-          950: '#04140c',
-          900: '#07200f',
-          800: '#0b3018',
+          950: '#06120d',
+          900: '#0b1f16',
+          800: '#123024',
         },
+        // "neon" tokens are kept as names for compatibility, but retuned to a
+        // refined emerald-&-gold luxe palette (softer, warmer, less arcade).
         neon: {
-          green: '#39ff88',
-          lime: '#c6ff4d',
-          cyan: '#25e5ff',
-          gold: '#ffd24a',
-          pink: '#ff4d8d',
+          green: '#34d399', // emerald — primary accent
+          lime: '#a7f3d0', // soft mint
+          cyan: '#5eead4', // teal — cool partner to emerald
+          gold: '#e8c26a', // warm gold — luxe accent / money
+          pink: '#e0729a', // muted rose — danger / fire sale
         },
+        sand: '#e9e2cf', // warm ivory text
       },
       fontFamily: {
         display: ['"Rajdhani"', 'system-ui', 'sans-serif'],
         body: ['Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
-        neon: '0 0 20px rgba(57,255,136,0.35)',
-        'neon-strong': '0 0 32px rgba(57,255,136,0.55)',
+        neon: '0 0 22px rgba(52,211,153,0.26)',
+        'neon-strong': '0 0 34px rgba(52,211,153,0.42)',
+        gold: '0 0 26px rgba(232,194,106,0.34)',
       },
       keyframes: {
         'card-flip': {
@@ -75,6 +79,18 @@ export default {
           '55%': { transform: 'scale(0.92) rotate(-6deg)', opacity: '1' },
           '100%': { transform: 'scale(1) rotate(-6deg)', opacity: '1' },
         },
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        'count-pop': {
+          '0%': { transform: 'translateY(6px) scale(0.9)', opacity: '0' },
+          '100%': { transform: 'translateY(0) scale(1)', opacity: '1' },
+        },
+        shine: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
       },
       animation: {
         'card-flip': 'card-flip 0.7s ease-out',
@@ -88,6 +104,9 @@ export default {
         'gradient-x': 'gradient-x 4s ease infinite',
         'bounce-in': 'bounce-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)',
         'stamp-in': 'stamp-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        'fade-in': 'fade-in 0.5s ease-out both',
+        'count-pop': 'count-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        shine: 'shine 3.5s linear infinite',
       },
     },
   },

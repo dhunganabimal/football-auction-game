@@ -48,12 +48,58 @@ export const POWER_CARDS = {
     target: 'opponent',
     desc: 'Freeze an opponent so they cannot bid on the next 2 football players.',
   },
+  THAW: {
+    id: 'THAW',
+    name: 'Thaw Out',
+    icon: '🌤️',
+    tone: 'good',
+    target: 'none',
+    desc: 'Instantly melt any freeze on yourself so you can bid again right away. The perfect counter to a Bid Freeze.',
+  },
+  SHIELD: {
+    id: 'SHIELD',
+    name: 'Shield',
+    icon: '🛡️',
+    tone: 'good',
+    target: 'none',
+    desc: 'Protect yourself for the next 2 players — you cannot be frozen, stolen from, raided or forced to release while your shield holds.',
+  },
+  MYSTERY_BOX: {
+    id: 'MYSTERY_BOX',
+    name: 'Mystery Box',
+    icon: '🎁',
+    tone: 'good',
+    target: 'none',
+    desc: 'Sign a random player straight from the pool into your squad for free. Needs an open squad spot.',
+  },
+  RAID: {
+    id: 'RAID',
+    name: 'Cash Raid',
+    icon: '💸',
+    tone: 'danger',
+    target: 'opponent',
+    desc: 'Snatch up to $10M straight out of an opponent’s budget and add it to your own.',
+  },
+  FREEZE_ALL: {
+    id: 'FREEZE_ALL',
+    name: 'Cold Snap',
+    icon: '❄️',
+    tone: 'warning',
+    target: 'none',
+    desc: 'Freeze every other manager for the next 1 player — nobody but you can bid on it.',
+  },
 }
 
 export const POWER_CARD_LIST = Object.values(POWER_CARDS)
 
 // Draw one random card id. `rng` lets callers inject determinism if needed.
-export function drawPowerCard(rng = Math.random) {
+// `avoid` (a Set/array of ids) is a soft preference — we try to hand out a card
+// the manager isn't already holding so hands don't fill up with duplicates, but
+// fall back to any card once every option is already held.
+export function drawPowerCard(rng = Math.random, avoid = null) {
   const ids = Object.keys(POWER_CARDS)
-  return ids[Math.floor(rng() * ids.length)]
+  const avoidSet = avoid instanceof Set ? avoid : avoid ? new Set(avoid) : null
+  const pool = avoidSet ? ids.filter((id) => !avoidSet.has(id)) : ids
+  const from = pool.length ? pool : ids
+  return from[Math.floor(rng() * from.length)]
 }

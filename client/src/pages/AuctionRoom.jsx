@@ -8,6 +8,7 @@ import ManagerBoard from '../components/ManagerBoard.jsx'
 import PowerCardHand from '../components/PowerCardHand.jsx'
 import EventLog from '../components/EventLog.jsx'
 import EndScreen from '../components/EndScreen.jsx'
+import PoolTracker from '../components/PoolTracker.jsx'
 import { fmtM } from '../lib.js'
 
 export default function AuctionRoom() {
@@ -35,6 +36,7 @@ export default function AuctionRoom() {
               {state.soldCount} sold · {state.poolCount} in pool · next power card at{' '}
               {(Math.floor(state.soldCount / 10) + 1) * 10}
             </div>
+            <PoolTracker poolPositions={state.poolPositions} className="mt-1.5" />
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -52,21 +54,23 @@ export default function AuctionRoom() {
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr_320px]">
         {/* Left — managers / leaderboard */}
-        <div className="order-2 lg:order-1">
+        <div className="order-2 animate-fade-in lg:order-1">
           <ManagerBoard />
         </div>
 
         {/* Center — auction stage */}
         <div className="order-1 space-y-4 lg:order-2">
           {state.current ? (
-            <>
+            <div key={state.current.fp.id} className="animate-slide-up space-y-4">
               <AuctionBlock />
               {state.current.biddingMode === 'turns' && <TurnTracker />}
               <BidControls />
               {isHost && state.settings.timerMode === 'host' && <AuctioneerControls />}
-            </>
+            </div>
           ) : isMyNomination ? (
-            <NominationPanel />
+            <div className="animate-slide-up">
+              <NominationPanel />
+            </div>
           ) : (
             <WaitingForNomination random={isRandom} nominator={nominator} />
           )}
@@ -74,7 +78,7 @@ export default function AuctionRoom() {
         </div>
 
         {/* Right — live feed */}
-        <div className="order-3">
+        <div className="order-3 animate-fade-in">
           <EventLog />
         </div>
       </div>

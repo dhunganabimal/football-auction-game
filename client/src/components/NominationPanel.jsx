@@ -15,6 +15,14 @@ export default function NominationPanel() {
       .sort((a, b) => b.rating - a.rating)
   }, [state.pool, filter, query])
 
+  // Remaining players per position, so the filter chips double as a scarcity view.
+  const counts = useMemo(() => {
+    const c = { ALL: state.pool.length }
+    for (const pos of POSITIONS) c[pos] = 0
+    for (const p of state.pool) c[p.position] = (c[p.position] || 0) + 1
+    return c
+  }, [state.pool])
+
   return (
     <div className="panel p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -36,7 +44,7 @@ export default function NominationPanel() {
               filter === pos ? 'bg-neon-green text-pitch-950' : 'bg-white/5 text-slate-300 hover:bg-white/10'
             }`}
           >
-            {pos}
+            {pos} <span className="ml-1 opacity-70">{counts[pos] ?? 0}</span>
           </button>
         ))}
         <input

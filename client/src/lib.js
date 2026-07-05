@@ -12,7 +12,8 @@ export const fmtM = (n) => `$${n ?? 0}M`
 export const posClass = (pos) => `pos-${pos}`
 
 // Deterministic accent color per manager id (for avatars / highlights).
-const ACCENTS = ['#39ff88', '#25e5ff', '#ffd24a', '#ff4d8d', '#c6ff4d', '#a78bfa', '#fb923c', '#34d399']
+// Refined emerald-&-gold luxe accents — harmonized but still distinct per manager.
+const ACCENTS = ['#34d399', '#e8c26a', '#5eead4', '#e0729a', '#a7f3d0', '#c4a3f5', '#f0a35e', '#7dd3fc']
 export function accentFor(id = '') {
   let h = 0
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0

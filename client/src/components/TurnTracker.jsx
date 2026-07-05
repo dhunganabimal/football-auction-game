@@ -49,7 +49,9 @@ export default function TurnTracker() {
                 {p.nickname}
               </span>
               {isLeader && !hasFolded && (
-                <span className="chip bg-neon-gold/20 text-neon-gold">👑 {fmtM(cur.price)}</span>
+                <span className="chip shimmer-gold text-amber-100 ring-1 ring-neon-gold/40">
+                  👑 {fmtM(cur.price)}
+                </span>
               )}
               {isTurn && <span className="chip bg-neon-green/20 text-neon-green">⏳ now</span>}
               {hasFolded && <span className="chip bg-white/10 text-slate-400">out</span>}
