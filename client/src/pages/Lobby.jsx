@@ -253,6 +253,15 @@ export default function Lobby() {
                 {p.isHost && <span className="chip bg-neon-gold/20 text-neon-gold">HOST</span>}
                 {p.id === playerId && <span className="chip bg-white/10 text-slate-300">you</span>}
                 {!p.connected && <span className="chip bg-rose-500/20 text-rose-300">offline</span>}
+                {isHost && p.id !== playerId && (
+                  <button
+                    className="btn-ghost ml-auto shrink-0 px-2 py-1 text-xs text-rose-300 hover:border-rose-400/50"
+                    onClick={() => actions.kickPlayer(p.id)}
+                    title={`Kick ${p.nickname}`}
+                  >
+                    🥾 Kick
+                  </button>
+                )}
               </li>
             ))}
           </ul>

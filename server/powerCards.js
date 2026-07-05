@@ -6,6 +6,8 @@
 //   'opponent'        -> pick another manager
 //   'opponentPlayer'  -> pick a football player owned by another manager
 //   'ownPlayer'       -> pick a football player from your own squad
+//   'swap'            -> pick one of YOUR players, then an opponent's player of
+//                        the same position to trade it for
 
 export const POWER_CARDS = {
   STEAL: {
@@ -87,6 +89,46 @@ export const POWER_CARDS = {
     tone: 'warning',
     target: 'none',
     desc: 'Freeze every other manager for the next 1 player — nobody but you can bid on it.',
+  },
+  POSITION_SWAP: {
+    id: 'POSITION_SWAP',
+    name: 'Position Swap',
+    icon: '🔄',
+    tone: 'warning',
+    target: 'swap',
+    desc: 'Trade one of your players for an opponent’s player in the SAME position. No money changes hands — each side keeps the price they paid.',
+  },
+  POACH: {
+    id: 'POACH',
+    name: 'Poach',
+    icon: '🤝',
+    tone: 'danger',
+    target: 'opponentPlayer',
+    desc: 'Sign a player straight out of a rival’s squad — but you pay them the price they paid for it. You need squad room and enough budget to keep your reserve.',
+  },
+  BARGAIN: {
+    id: 'BARGAIN',
+    name: 'Bargain',
+    icon: '🏷️',
+    tone: 'good',
+    target: 'none',
+    desc: 'The next player you win is 25% off — the discount is applied automatically when the hammer falls.',
+  },
+  WILDCARD: {
+    id: 'WILDCARD',
+    name: 'Wildcard',
+    icon: '🎲',
+    tone: 'good',
+    target: 'none',
+    desc: 'Not the card you wanted? Discard it and draw TWO fresh power cards in its place.',
+  },
+  LOOT: {
+    id: 'LOOT',
+    name: 'Loot',
+    icon: '🎯',
+    tone: 'good',
+    target: 'none',
+    desc: 'Grab a random player from the skipped pile for free. Needs an open squad spot and at least one skipped player waiting.',
   },
 }
 

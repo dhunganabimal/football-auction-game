@@ -30,6 +30,16 @@ export function GameProvider({ children }) {
     overlayTimer.current = setTimeout(() => setOverlay(null), ms)
   }, [])
 
+  // Drop the local seat and return to Home — used both by the Leave button and
+  // when the server kicks us out of a room.
+  const leaveTeardown = useCallback(() => {
+    localStorage.removeItem(LS_PID)
+    localStorage.removeItem(LS_CODE)
+    setState(null)
+    setMe(null)
+    setPlayerId(null)
+  }, [])
+
   // ---- socket lifecycle ----
   useEffect(() => {
     function onConnect() {
@@ -82,6 +92,10 @@ export function GameProvider({ children }) {
     socket.on('power:played', ({ byName, card, text }) => {
       showOverlay({ kind: 'played', byName, card, text }, 3000)
     })
+    socket.on('kicked', ({ reason }) => {
+      pushToast(`You were removed from the room${reason ? ` (${reason})` : ''}.`, 'error')
+      leaveTeardown()
+    })
 
     if (socket.connected) onConnect()
 
@@ -97,8 +111,9 @@ export function GameProvider({ children }) {
       socket.off('power:round')
       socket.off('power:card')
       socket.off('power:played')
+      socket.off('kicked')
     }
-  }, [pushToast, showOverlay])
+  }, [pushToast, showOverlay, leaveTeardown])
 
   // Nudge the player when the circular-bidding turn lands on them.
   const lastTurnRef = useRef(null)
@@ -142,13 +157,10 @@ export function GameProvider({ children }) {
     usePowerCard: (cardId, target) => run('usePowerCard', { cardId, target }),
     acknowledgePowerRound: () => run('acknowledgePowerRound'),
     endGame: () => run('endGame'),
-    leave: () => {
-      localStorage.removeItem(LS_PID)
-      localStorage.removeItem(LS_CODE)
-      setState(null)
-      setMe(null)
-      setPlayerId(null)
-    },
+    kickPlayer: (targetId) => run('kickPlayer', { targetId }),
+    startKickVote: (targetId) => run('startKickVote', { targetId }),
+    castKickVote: (agree) => run('castKickVote', { agree }),
+    leave: leaveTeardown,
   }
 
   const value = {

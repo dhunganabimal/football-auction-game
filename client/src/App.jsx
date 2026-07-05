@@ -5,6 +5,7 @@ import AuctionRoom from './pages/AuctionRoom.jsx'
 import Toasts from './components/Toasts.jsx'
 import PowerOverlay from './components/PowerOverlay.jsx'
 import PowerCardGate from './components/PowerCardGate.jsx'
+import KickVotePanel from './components/KickVotePanel.jsx'
 
 export default function App() {
   const { state, playerId } = useGame()
@@ -20,6 +21,7 @@ export default function App() {
       <Toasts />
       <PowerOverlay />
       <PowerCardGate />
+      <KickVotePanel />
     </div>
   )
 }

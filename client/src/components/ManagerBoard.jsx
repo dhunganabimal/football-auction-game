@@ -6,8 +6,12 @@ import PlayerAvatar from './PlayerAvatar.jsx'
 import SquadTracker from './SquadTracker.jsx'
 
 export default function ManagerBoard() {
-  const { state, playerId } = useGame()
+  const { state, playerId, actions } = useGame()
   const [openId, setOpenId] = useState(playerId)
+
+  const iAmHost = state.hostId === playerId
+  const connectedCount = state.players.filter((p) => p.connected).length
+  const voteActive = Boolean(state.kickVote)
 
   const ranked = [...state.players].sort(
     (a, b) => Number(b.complete) - Number(a.complete) || b.squadCount - a.squadCount || b.budget - a.budget
@@ -84,6 +88,33 @@ export default function ManagerBoard() {
                       </li>
                     ))}
                   </ul>
+
+                  {!isYou && (
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-white/10 pt-3">
+                      {iAmHost && (
+                        <button
+                          className="btn-ghost flex-1 py-1.5 text-xs text-rose-300 hover:border-rose-400/50"
+                          onClick={() => actions.kickPlayer(p.id)}
+                        >
+                          🥾 Kick
+                        </button>
+                      )}
+                      <button
+                        className="btn-ghost flex-1 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-40"
+                        disabled={voteActive || connectedCount < 3 || !p.connected}
+                        title={
+                          connectedCount < 3
+                            ? 'Need at least 3 managers to hold a vote'
+                            : voteActive
+                              ? 'A vote is already in progress'
+                              : ''
+                        }
+                        onClick={() => actions.startKickVote(p.id)}
+                      >
+                        🗳️ Vote to kick
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

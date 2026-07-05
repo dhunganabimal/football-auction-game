@@ -171,6 +171,24 @@ io.on('connection', (socket) => {
     reply(cb, r)
   })
 
+  socket.on('kickPlayer', ({ targetId }, cb) => {
+    const room = currentRoom(socket)
+    if (!room) return reply(cb, { ok: false, error: 'No room.' })
+    reply(cb, room.hostKick(socket.data.playerId, targetId))
+  })
+
+  socket.on('startKickVote', ({ targetId }, cb) => {
+    const room = currentRoom(socket)
+    if (!room) return reply(cb, { ok: false, error: 'No room.' })
+    reply(cb, room.startKickVote(socket.data.playerId, targetId))
+  })
+
+  socket.on('castKickVote', ({ agree }, cb) => {
+    const room = currentRoom(socket)
+    if (!room) return reply(cb, { ok: false, error: 'No room.' })
+    reply(cb, room.castKickVote(socket.data.playerId, agree))
+  })
+
   socket.on('disconnect', () => {
     const room = currentRoom(socket)
     if (!room) return

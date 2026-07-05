@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useGame } from '../game.jsx'
 import { fmtM, posClass } from '../lib.js'
 import { Avatar } from '../pages/Lobby.jsx'
@@ -73,7 +74,93 @@ export default function PowerCardTargetModal({ card, onClose }) {
             empty="You have no players to select yet."
           />
         )}
+
+        {card.target === 'swap' && (
+          <SwapPicker
+            mine={mine}
+            opponents={opponents}
+            onSwap={(fpId, ownerId, theirFpId) => play({ fpId, ownerId, theirFpId })}
+          />
+        )}
       </div>
+    </div>
+  )
+}
+
+// Two-step trade picker: pick one of YOUR players, then an opponent's player in
+// the SAME position to swap it for. Only same-position opponents are offered.
+function SwapPicker({ mine, opponents, onSwap }) {
+  const [pick, setPick] = useState(null) // the chosen own player { id, position, name }
+  const mySquad = mine?.squad || []
+
+  if (mySquad.length === 0)
+    return <div className="py-6 text-center text-slate-500">You have no players to swap yet.</div>
+
+  if (!pick) {
+    return (
+      <div>
+        <div className="label mb-2">Step 1 — pick one of your players to trade away</div>
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {mySquad.map((s) => (
+            <button
+              key={s.id}
+              className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2 text-left text-sm hover:border-neon-gold/50"
+              onClick={() => setPick(s)}
+            >
+              <span className={`chip ${posClass(s.position)} w-9 justify-center text-[10px]`}>{s.position}</span>
+              <span className="flex-1 truncate">{s.name}</span>
+              <span className="text-xs text-neon-gold">{fmtM(s.price)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const candidates = opponents
+    .map((o) => ({ owner: o, squad: o.squad.filter((s) => s.position === pick.position) }))
+    .filter((o) => o.squad.length > 0)
+
+  return (
+    <div>
+      <button className="mb-2 text-xs text-slate-400 hover:text-white" onClick={() => setPick(null)}>
+        ← back
+      </button>
+      <div className="label mb-2 flex items-center gap-2">
+        Step 2 — swap
+        <span className={`chip ${posClass(pick.position)} justify-center text-[10px]`}>{pick.position}</span>
+        <span className="truncate font-semibold text-slate-200">{pick.name}</span> for a {pick.position}:
+      </div>
+      {candidates.length === 0 ? (
+        <div className="py-6 text-center text-slate-500">
+          No opponent has a {pick.position} to swap right now.
+        </div>
+      ) : (
+        <div className="max-h-64 space-y-4 overflow-y-auto pr-1">
+          {candidates.map(({ owner, squad }) => (
+            <div key={owner.id}>
+              <div className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-slate-300">
+                <Avatar id={owner.id} name={owner.nickname} size={22} /> {owner.nickname}
+              </div>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                {squad.map((s) => (
+                  <button
+                    key={s.id}
+                    className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2 text-left text-sm hover:border-neon-pink/50"
+                    onClick={() => onSwap(pick.id, owner.id, s.id)}
+                  >
+                    <span className={`chip ${posClass(s.position)} w-9 justify-center text-[10px]`}>
+                      {s.position}
+                    </span>
+                    <span className="flex-1 truncate">{s.name}</span>
+                    <span className="text-xs text-neon-gold">{fmtM(s.price)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

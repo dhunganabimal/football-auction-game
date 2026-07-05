@@ -10,6 +10,8 @@ const POWER_ACK_TIMEOUT = 20 // seconds managers get to decide before auto-conti
 const DEFAULT_AUCTION_SECONDS = 20
 const FREEZE_DURATION = 2 // frozen for the next 2 auctions
 const SHIELD_DURATION = 2 // protected from freeze/steal/raid for the next 2 auctions
+const BARGAIN_DISCOUNT = 0.25 // Bargain card: % knocked off the holder's next win
+const KICK_VOTE_TIMEOUT = 30 // seconds a vote-to-kick stays open before it lapses
 const MAX_LOG = 40
 const AUTO_DRAW_DELAY = 3500 // ms breather between auctions in random mode
 const AUTO_START_DELAY = 1500 // ms before the very first random draw
@@ -48,6 +50,8 @@ export class Room {
     this.powerAckTimer = null // auto-continues the auction if someone stalls deciding
     this.awaitingAuto = false // random mode: a draw is scheduled between auctions
     this.autoTimer = null // pending setTimeout handle for the next auto-draw
+    this.kickVote = null // { targetId, targetName, startedById, startedByName, votes: Map<id,bool> }
+    this.kickVoteTimer = null // auto-lapses an unresolved vote-to-kick
     this.timer = setInterval(() => this.tick(), 1000)
   }
 
@@ -55,6 +59,7 @@ export class Room {
     clearInterval(this.timer)
     clearTimeout(this.autoTimer)
     clearTimeout(this.powerAckTimer)
+    clearTimeout(this.kickVoteTimer)
   }
 
   isEmpty() {
@@ -74,6 +79,7 @@ export class Room {
       cards: [], // card ids in hand
       frozen: 0, // auctions remaining frozen
       shield: 0, // auctions remaining protected from hostile cards
+      pendingDiscount: 0, // Bargain card: fraction off the next player they win
       connected: true,
       isHost,
     }
@@ -115,6 +121,15 @@ export class Room {
     }
     // Don't let a disconnected manager stall everyone else's power-card decision.
     if (this.pendingPowerAck?.has(p.id)) this.checkPowerGate()
+    // A vote in progress may now pass, fail, or be void (if its target left).
+    if (this.kickVote) {
+      if (this.kickVote.targetId === p.id) {
+        this.cancelKickVote()
+        this.pushLog('system', `🗳️ Vote to kick ${p.nickname} cancelled — they left the room.`)
+      } else {
+        this.evaluateKickVote()
+      }
+    }
     return p
   }
 
@@ -315,6 +330,7 @@ export class Room {
       this.current = {
         fp,
         price: startPrice,
+        startPrice, // floor to restore if a leading bidder leaves mid-lot
         bidderId: null,
         bidderName: null,
         timeLeft: this.settings.auctionSeconds, // per-turn countdown
@@ -329,6 +345,7 @@ export class Room {
       this.current = {
         fp,
         price: startPrice,
+        startPrice, // floor to restore if a leading bidder leaves mid-lot
         bidderId: null,
         bidderName: null,
         timeLeft: this.settings.timerMode === 'host' ? null : this.settings.auctionSeconds,
@@ -477,13 +494,23 @@ export class Room {
     this.current = null
     if (cur.bidderId) {
       const buyer = this.players.get(cur.bidderId)
-      buyer.budget -= cur.price
-      buyer.squad.push({ ...cur.fp, price: cur.price })
+      // Bargain card: knock a fixed % off this one win, then spend the card.
+      let price = cur.price
+      if (buyer.pendingDiscount > 0) {
+        const discounted = Math.max(STARTING_BID, Math.ceil(cur.price * (1 - buyer.pendingDiscount)))
+        if (discounted < price) {
+          this.pushLog('power', `🏷️ ${buyer.nickname}'s Bargain saved ${price - discounted}M on ${cur.fp.name}.`)
+          price = discounted
+        }
+        buyer.pendingDiscount = 0
+      }
+      buyer.budget -= price
+      buyer.squad.push({ ...cur.fp, price })
       this.soldCount += 1
-      this.pushLog('sold', `${cur.fp.name} SOLD to ${buyer.nickname} for ${cur.price}M!`)
+      this.pushLog('sold', `${cur.fp.name} SOLD to ${buyer.nickname} for ${price}M!`)
       this.io.to(this.code).emit('auction:sold', {
         fp: cur.fp,
-        price: cur.price,
+        price,
         buyerName: buyer.nickname,
         buyerId: buyer.id,
       })
@@ -732,6 +759,70 @@ export class Room {
         this.openAuction(stripPrice(fp), player.id, startPrice, true)
         return ok()
       }
+      case 'POSITION_SWAP': {
+        const mineIdx = player.squad.findIndex((s) => s.id === target.fpId)
+        if (mineIdx === -1) return err('Pick one of your own players to trade away.')
+        const victim = this.players.get(target.ownerId)
+        if (!victim || victim.id === player.id) return err('Pick another manager to swap with.')
+        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't swap with them.`)
+        const theirIdx = victim.squad.findIndex((s) => s.id === target.theirFpId)
+        if (theirIdx === -1) return err('That player is not in their squad anymore.')
+        const mine = player.squad[mineIdx]
+        const theirs = victim.squad[theirIdx]
+        if (mine.position !== theirs.position)
+          return err('You can only swap players in the same position.')
+        // Straight one-for-one trade — each side keeps the price they paid, so
+        // squad sizes and budgets are untouched.
+        player.squad[mineIdx] = theirs
+        victim.squad[theirIdx] = mine
+        this.announcePower(player, def, `swapped ${mine.name} for ${victim.nickname}'s ${theirs.name} 🔄`)
+        return ok()
+      }
+      case 'POACH': {
+        const victim = this.players.get(target.ownerId)
+        if (!victim || victim.id === player.id) return err('Pick another manager to poach from.')
+        if (victim.shield > 0) return err(`${victim.nickname} is shielded 🛡️ — you can't poach from them.`)
+        const idx = victim.squad.findIndex((s) => s.id === target.fpId)
+        if (idx === -1) return err('That player is not in their squad anymore.')
+        if (player.squad.length >= this.settings.squadSize) return err('Your squad is full.')
+        const fp = victim.squad[idx]
+        // Pay the owner what they paid, while keeping $1M in reserve per spot this
+        // purchase won't fill — same rule as a normal bid (see maxBid()).
+        const spotsAfter = Math.max(0, this.settings.squadSize - player.squad.length - 1)
+        const reserve = spotsAfter * MIN_RESERVE_PER_SPOT
+        if (player.budget - fp.price < reserve)
+          return err(`Not enough budget — you must reserve $1M per remaining squad spot.`)
+        victim.squad.splice(idx, 1)
+        victim.budget += fp.price
+        player.budget -= fp.price
+        player.squad.push({ ...fp }) // keep its recorded price
+        this.announcePower(player, def, `poached ${fp.name} from ${victim.nickname} for ${fp.price}M 🤝`)
+        return ok()
+      }
+      case 'BARGAIN': {
+        player.pendingDiscount = BARGAIN_DISCOUNT
+        this.announcePower(player, def, `lined up a 🏷️ Bargain — ${Math.round(BARGAIN_DISCOUNT * 100)}% off their next win`)
+        return ok()
+      }
+      case 'WILDCARD': {
+        // The played WILDCARD itself is spliced out by usePowerCard() after this
+        // returns, so avoid the remaining hand (minus this card) when redrawing.
+        const held = new Set(player.cards.filter((c) => c !== def.id))
+        const drawn = [drawPowerCard(Math.random, held), drawPowerCard(Math.random, held)]
+        player.cards.push(...drawn)
+        const names = drawn.map((id) => POWER_CARDS[id].name).join(' & ')
+        this.announcePower(player, def, `played a 🎲 Wildcard and drew ${names}`)
+        return ok()
+      }
+      case 'LOOT': {
+        if (player.squad.length >= this.settings.squadSize) return err('Your squad is already full.')
+        if (this.skippedPool.length === 0) return err('No skipped players to loot right now.')
+        const idx = Math.floor(Math.random() * this.skippedPool.length)
+        const [fp] = this.skippedPool.splice(idx, 1)
+        player.squad.push({ ...fp, price: 0 })
+        this.announcePower(player, def, `looted ${fp.name} (${fp.position}) from the skipped pile for free 🎯`)
+        return ok()
+      }
       default:
         return err('That power is not implemented.')
     }
@@ -767,6 +858,177 @@ export class Room {
     if (byPlayerId !== this.hostId) return err('Only the host can end the game.')
     this.endGame()
     return ok()
+  }
+
+  // ---- kicking a manager (host action or majority vote) -------------------
+  // Single teardown path used by both hostKick() and a passed vote. Mirrors the
+  // clean-up concerns in disconnect(), but actually removes the seat and frees
+  // their squad back into the pool.
+  removePlayer(targetId, reason) {
+    const p = this.players.get(targetId)
+    if (!p) return err('That manager is no longer in the room.')
+
+    // Any pending vote referencing this manager is now moot.
+    if (this.kickVote && (this.kickVote.targetId === targetId || this.kickVote.votes.has(targetId))) {
+      if (this.kickVote.targetId === targetId) this.cancelKickVote()
+      else this.kickVote.votes.delete(targetId)
+    }
+
+    // Return their signed players to the auction pool so the game keeps flowing.
+    if (p.squad.length > 0) {
+      for (const s of p.squad) this.pool.push(stripPrice(s))
+      this.pushLog('system', `♻️ ${p.squad.length} player${p.squad.length === 1 ? '' : 's'} from ${p.nickname} returned to the pool.`)
+    }
+
+    // Fold them out of a live lot before the seat disappears. We keep turnOrder
+    // untouched (turnPtr indexes into it) — folding + deleting the seat is enough
+    // for isBidderLive()/advanceTurn() to skip them cleanly.
+    const wasOnTheClock =
+      this.current && this.settings.biddingMode === 'turns' && this.current.turnId === targetId
+    if (this.current) {
+      if (this.settings.biddingMode === 'turns' && this.current.folded) {
+        this.current.folded.add(targetId)
+      }
+      if (this.current.bidderId === targetId) {
+        this.current.bidderId = null
+        this.current.bidderName = null
+        this.current.price = this.current.startPrice ?? STARTING_BID
+      }
+    }
+
+    // Drop the seat.
+    this.order = this.order.filter((id) => id !== targetId)
+    this.players.delete(targetId)
+    if (this.pendingPowerAck?.has(targetId)) {
+      this.pendingPowerAck.delete(targetId)
+    }
+
+    // Hand the crown to the next connected manager if the host was removed.
+    if (this.hostId === targetId) {
+      const heir = this.connectedPlayers()[0] || this.order.map((id) => this.players.get(id)).find(Boolean)
+      this.hostId = heir ? heir.id : null
+      if (heir) {
+        heir.isHost = true
+        this.pushLog('system', `👑 ${heir.nickname} is now the host.`)
+      }
+    }
+
+    this.pushLog('system', `🥾 ${p.nickname} was removed (${reason}).`)
+    this.io.to(p.socketId).emit('kicked', { reason })
+
+    // Keep turn/nomination pointers valid now that the order array shrank.
+    if (this.order.length > 0) {
+      this.nominatorIndex %= this.order.length
+      this.bidRotation %= this.order.length
+    } else {
+      this.nominatorIndex = 0
+      this.bidRotation = 0
+    }
+    if (this.settings.nominationMode === 'manual' && this.status === 'auction' && !this.current) {
+      this.ensureActiveNominator()
+    }
+
+    // If the manager on the clock was removed, hand the turn on (also resolves
+    // the lot if that leaves a lone standing bidder or nobody able to bid).
+    if (this.current && this.settings.biddingMode === 'turns' && wasOnTheClock) this.advanceTurn()
+    // Unblock a power-card gate if they were the last holdout.
+    if (this.pendingPowerAck) this.checkPowerGate()
+
+    // If the room can no longer sustain an auction, wrap it up.
+    if (this.status === 'auction' && this.connectedPlayers().length < 2) this.endGame()
+    else this.maybeEndGame()
+
+    this.broadcast()
+    return ok()
+  }
+
+  hostKick(byPlayerId, targetId) {
+    if (byPlayerId !== this.hostId) return err('Only the host can kick a manager.')
+    if (targetId === byPlayerId) return err('You cannot kick yourself.')
+    if (!this.players.has(targetId)) return err('That manager is no longer in the room.')
+    return this.removePlayer(targetId, 'kicked by host')
+  }
+
+  startKickVote(byPlayerId, targetId) {
+    if (this.kickVote) return err('A vote to kick is already in progress.')
+    const starter = this.players.get(byPlayerId)
+    const target = this.players.get(targetId)
+    if (!starter) return err('You are not in this room.')
+    if (!target || !target.connected) return err('That manager is not available to kick.')
+    if (targetId === byPlayerId) return err('You cannot vote to kick yourself.')
+    if (this.connectedPlayers().length < 3) return err('Need at least 3 managers to hold a vote.')
+    this.kickVote = {
+      targetId,
+      targetName: target.nickname,
+      startedById: byPlayerId,
+      startedByName: starter.nickname,
+      votes: new Map([[byPlayerId, true]]), // starting a vote counts as a Yes
+    }
+    clearTimeout(this.kickVoteTimer)
+    this.kickVoteTimer = setTimeout(() => this.resolveKickVote(), KICK_VOTE_TIMEOUT * 1000)
+    this.pushLog('system', `🗳️ ${starter.nickname} started a vote to kick ${target.nickname}.`)
+    const resolved = this.evaluateKickVote()
+    if (!resolved) this.broadcast()
+    return ok()
+  }
+
+  castKickVote(byPlayerId, agree) {
+    if (!this.kickVote) return err('There is no active vote right now.')
+    if (byPlayerId === this.kickVote.targetId) return err('You cannot vote on your own removal.')
+    const voter = this.players.get(byPlayerId)
+    if (!voter || !voter.connected) return err('You are not able to vote right now.')
+    this.kickVote.votes.set(byPlayerId, !!agree)
+    const resolved = this.evaluateKickVote()
+    if (!resolved) this.broadcast()
+    return ok()
+  }
+
+  // Tally against the CURRENT eligible electorate (connected, minus the target)
+  // so the threshold shrinks correctly if managers leave mid-vote. Returns true
+  // if the vote resolved (passed or failed) and cleared itself.
+  evaluateKickVote() {
+    if (!this.kickVote) return false
+    const eligible = this.connectedPlayers().filter((p) => p.id !== this.kickVote.targetId)
+    const needed = Math.floor(eligible.length / 2) + 1
+    let yes = 0
+    let no = 0
+    for (const p of eligible) {
+      const v = this.kickVote.votes.get(p.id)
+      if (v === true) yes += 1
+      else if (v === false) no += 1
+    }
+    if (yes >= needed) {
+      const targetId = this.kickVote.targetId
+      this.cancelKickVote()
+      this.removePlayer(targetId, 'voted out by managers')
+      return true
+    }
+    // Vote can no longer pass even if everyone left decides Yes.
+    if (no > eligible.length - needed) {
+      const name = this.kickVote.targetName
+      this.cancelKickVote()
+      this.pushLog('system', `🗳️ The vote to kick ${name} failed.`)
+      this.broadcast()
+      return true
+    }
+    return false
+  }
+
+  resolveKickVote() {
+    if (!this.kickVote) return
+    const resolved = this.evaluateKickVote()
+    if (resolved) return
+    // Timed out without a majority — let it lapse.
+    const name = this.kickVote.targetName
+    this.cancelKickVote()
+    this.pushLog('system', `⌛ The vote to kick ${name} expired.`)
+    this.broadcast()
+  }
+
+  cancelKickVote() {
+    clearTimeout(this.kickVoteTimer)
+    this.kickVoteTimer = null
+    this.kickVote = null
   }
 
   // ---- serialization ------------------------------------------------------
@@ -835,6 +1097,30 @@ export class Room {
       powerGate: this.pendingPowerAck
         ? { pending: [...this.pendingPowerAck], reason: this.powerGateReason }
         : null,
+      kickVote: this.kickVote ? this.publicKickVote() : null,
+    }
+  }
+
+  publicKickVote() {
+    const v = this.kickVote
+    const eligible = this.connectedPlayers().filter((p) => p.id !== v.targetId)
+    const needed = Math.floor(eligible.length / 2) + 1
+    const yes = []
+    const no = []
+    for (const [id, agree] of v.votes) {
+      if (agree) yes.push(id)
+      else no.push(id)
+    }
+    return {
+      targetId: v.targetId,
+      targetName: v.targetName,
+      startedById: v.startedById,
+      startedByName: v.startedByName,
+      yes,
+      no,
+      voted: [...v.votes.keys()],
+      eligible: eligible.length,
+      needed,
     }
   }
 
@@ -846,6 +1132,7 @@ export class Room {
       maxBid: this.maxBid(player),
       frozen: player.frozen,
       shield: player.shield,
+      pendingDiscount: player.pendingDiscount,
     }
   }
 
