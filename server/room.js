@@ -1,4 +1,4 @@
-import { freshPool, POSITIONS } from './players.js'
+import { freshPool, buildPool, countsByPosition, POSITIONS } from './players.js'
 import { POWER_CARDS, drawPowerCard } from './powerCards.js'
 
 // ---- Tunable game constants -------------------------------------------------
@@ -20,6 +20,7 @@ export class Room {
     this.code = code
     this.io = io
     this.hostId = null
+    this.maxPerPosition = countsByPosition() // e.g. { GK: 25, DEF: 25, MID: 25, FWD: 25 }
     this.settings = {
       budget: 100,
       squadSize: 11,
@@ -28,10 +29,13 @@ export class Room {
       timerMode: 'timed', // 'timed' = countdown, 'host' = host closes each auction manually
       nominationMode: 'random', // 'random' = auto-draw, 'manual' = players nominate
       biddingMode: 'open', // 'open' = free-for-all, 'turns' = circular one-at-a-time
+      poolLimits: { ...this.maxPerPosition }, // how many of each position are drawn into this game
+      powerCardInterval: POWER_TRIGGER_EVERY, // power round after every N sold players (0 = never)
     }
     this.players = new Map() // playerId -> player
     this.order = [] // playerId nomination order
-    this.pool = freshPool() // available football players
+    this.pool = freshPool() // available football players (rebuilt to poolLimits at start())
+    this.skippedPool = [] // players nobody bid on — held here instead of muddying the main pool
     this.status = 'lobby' // lobby | auction | ended
     this.nominatorIndex = 0
     this.bidRotation = 0 // turn-based: which seat gets first dibs, rotates per lot
@@ -143,8 +147,20 @@ export class Room {
         if (Number.isFinite(v)) s.positionReqs[pos] = clamp(v, 0, 15)
       }
     }
+    if (settings.poolLimits) {
+      for (const pos of POSITIONS) {
+        const v = settings.poolLimits[pos]
+        if (Number.isFinite(v)) s.poolLimits[pos] = clamp(v, 0, this.maxPerPosition[pos])
+      }
+    }
+    if (Number.isFinite(settings.powerCardInterval))
+      s.powerCardInterval = clamp(settings.powerCardInterval, 0, 50)
     // Keep every manager's live budget in sync with the configured budget.
     for (const p of this.players.values()) p.budget = s.budget
+  }
+
+  poolLimitTotal() {
+    return POSITIONS.reduce((n, pos) => n + this.settings.poolLimits[pos], 0)
   }
 
   canStart() {
@@ -153,13 +169,17 @@ export class Room {
       this.status === 'lobby' &&
       this.players.size >= 2 &&
       reqTotal <= this.settings.squadSize &&
-      this.settings.squadSize <= this.pool.length
+      this.settings.squadSize <= this.poolLimitTotal()
     )
   }
 
   start(byPlayerId) {
     if (byPlayerId !== this.hostId || !this.canStart()) return false
     this.status = 'auction'
+    // Randomly select this game's pool from the master player list, honoring
+    // the host's per-position caps (e.g. "only 7 GKs this game").
+    this.pool = buildPool(this.settings.poolLimits)
+    this.skippedPool = []
     this.nominatorIndex = 0
     this.pushLog('system', `Auction started — ${this.settings.budget}M budget, ${this.settings.squadSize}-player squads.`)
     if (this.settings.nominationMode === 'random') {
@@ -200,12 +220,25 @@ export class Room {
   // After an auction resolves, either pass the turn (manual) or queue the
   // next random draw (random). Ends the game first if squads are full / pool dry.
   advanceOrSchedule() {
+    this.recycleSkippedIfNeeded()
     this.maybeEndGame()
     if (this.status === 'ended') return
     if (this.settings.nominationMode === 'random') {
       this.scheduleAutoNominate(AUTO_DRAW_DELAY)
     } else {
       this.advanceNominator()
+    }
+  }
+
+  // Once the main pool runs dry, bring back everything sitting in the skipped
+  // pool so the game can keep going (and eventually end normally) instead of
+  // stopping early while skipped players are still unclaimed.
+  recycleSkippedIfNeeded() {
+    if (this.pool.length === 0 && this.skippedPool.length > 0) {
+      const n = this.skippedPool.length
+      this.pool.push(...this.skippedPool)
+      this.skippedPool = []
+      this.pushLog('system', `♻️ ${n} skipped player${n === 1 ? '' : 's'} returned to the pool.`)
     }
   }
 
@@ -265,8 +298,8 @@ export class Room {
     // This is what breaks a mutual-freeze standoff — e.g. one full squad plus
     // two managers who froze each other — instead of looping forever.
     if (eligible.length === 0) {
-      this.pool.push(fp)
-      this.pushLog('skip', `${fp.name} was skipped (no eligible bidders) and returns to the pool.`)
+      this.skippedPool.push(fp)
+      this.pushLog('skip', `${fp.name} was skipped (no eligible bidders) and moved to the skipped pool.`)
       this.tickFreezes()
       this.io.to(this.code).emit('auction:skipped', { fp })
       this.advanceOrSchedule()
@@ -455,13 +488,17 @@ export class Room {
         buyerId: buyer.id,
       })
       this.tickFreezes()
-      if (this.soldCount % POWER_TRIGGER_EVERY === 0) {
+      const interval = this.settings.powerCardInterval
+      if (interval > 0 && this.soldCount % interval === 0) {
         this.triggerPowerRound() // draws cards and opens a 'round' decision gate
       }
     } else {
-      // Nobody bid — return to the pool so it can resurface later.
-      this.pool.push(cur.fp)
-      this.pushLog('skip', `${cur.fp.name} was skipped (no bids) and returns to the pool.`)
+      // Nobody bid — move it to the skipped pool instead of dumping it back
+      // into the main pool, where it could resurface after dozens of other
+      // players. Managers can see it waiting there (by position) and it gets
+      // recycled back into the draw automatically once the main pool runs dry.
+      this.skippedPool.push(cur.fp)
+      this.pushLog('skip', `${cur.fp.name} was skipped (no bids) and moved to the skipped pool.`)
       this.io.to(this.code).emit('auction:skipped', { fp: cur.fp })
       this.tickFreezes()
     }
@@ -767,6 +804,7 @@ export class Room {
       code: this.code,
       status: this.status,
       settings: this.settings,
+      maxPerPosition: this.maxPerPosition,
       hostId: this.hostId,
       nominatorId: this.nominatorId(),
       awaitingAuto: this.awaitingAuto,
@@ -774,6 +812,8 @@ export class Room {
       poolCount: this.pool.length,
       poolPositions: this.positionCounts(this.pool),
       pool: this.pool,
+      skippedCount: this.skippedPool.length,
+      skippedPositions: this.positionCounts(this.skippedPool),
       current: this.current
         ? {
             fp: this.current.fp,

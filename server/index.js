@@ -205,6 +205,13 @@ function sanitizeSettings(s) {
       MID: Number(s.positionReqs.MID),
       FWD: Number(s.positionReqs.FWD),
     },
+    poolLimits: s.poolLimits && {
+      GK: Number(s.poolLimits.GK),
+      DEF: Number(s.poolLimits.DEF),
+      MID: Number(s.poolLimits.MID),
+      FWD: Number(s.poolLimits.FWD),
+    },
+    powerCardInterval: Number(s.powerCardInterval),
   }
 }
 

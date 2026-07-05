@@ -8,6 +8,7 @@ export default function Lobby() {
   const reqTotal = POSITIONS.reduce((n, p) => n + s.positionReqs[p], 0)
   const reqOk = reqTotal <= s.squadSize
   const enoughPlayers = state.players.length >= 2
+  const poolOk = POSITIONS.reduce((n, p) => n + (s.poolLimits?.[p] ?? 0), 0) >= s.squadSize
 
   const update = (patch) => {
     if (!isHost) return
@@ -19,15 +20,21 @@ export default function Lobby() {
       timerMode: s.timerMode,
       biddingMode: s.biddingMode,
       positionReqs: { ...s.positionReqs },
+      poolLimits: { ...s.poolLimits },
+      powerCardInterval: s.powerCardInterval,
       ...patch,
     }
     actions.configure(next)
   }
   const updatePos = (pos, val) =>
     update({ positionReqs: { ...s.positionReqs, [pos]: Math.max(0, Number(val) || 0) } })
+  const updatePoolLimit = (pos, val) =>
+    update({ poolLimits: { ...s.poolLimits, [pos]: Math.max(0, Number(val) || 0) } })
+  const poolLimitTotal = POSITIONS.reduce((n, p) => n + (s.poolLimits?.[p] ?? 0), 0)
 
   const start = async () => {
     if (!reqOk) return pushToast('Position minimums exceed squad size.', 'warn')
+    if (!poolOk) return pushToast('Not enough players selected for the auction pool.', 'warn')
     if (!enoughPlayers) return pushToast('Need at least 2 managers to start.', 'warn')
     await actions.startGame()
   }
@@ -100,6 +107,56 @@ export default function Lobby() {
               Minimums total {reqTotal} / {s.squadSize} squad slots.
               {!reqOk && ' Reduce minimums or increase squad size.'}
             </p>
+          </div>
+
+          <div className="mt-5">
+            <div className="label">Players in auction per position</div>
+            <div className="grid grid-cols-4 gap-3">
+              {POSITIONS.map((pos) => {
+                const max = state.maxPerPosition?.[pos] ?? 25
+                return (
+                  <div key={pos} className="text-center">
+                    <div className={`chip mb-1.5 w-full justify-center pos-${pos}`} title={POSITION_LABEL[pos]}>
+                      {pos}
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      max={max}
+                      className="input text-center"
+                      disabled={!isHost}
+                      value={s.poolLimits?.[pos] ?? max}
+                      onChange={(e) => updatePoolLimit(pos, e.target.value)}
+                    />
+                    <div className="mt-1 text-[10px] text-slate-500">of {max} max</div>
+                  </div>
+                )
+              })}
+            </div>
+            <p className={`mt-2 text-xs ${poolOk ? 'text-slate-500' : 'text-neon-pink'}`}>
+              {poolLimitTotal} players will be randomly drawn into this auction.
+              {!poolOk && ' Increase these to cover your squad size.'}
+            </p>
+          </div>
+
+          <div className="mt-5">
+            <div className="label">Power card frequency</div>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={0}
+                max={50}
+                className="input w-28 text-center"
+                disabled={!isHost}
+                value={s.powerCardInterval}
+                onChange={(e) => update({ powerCardInterval: Math.max(0, Number(e.target.value) || 0) })}
+              />
+              <span className="text-xs text-slate-400">
+                {Number(s.powerCardInterval) > 0
+                  ? `Everyone draws a power card after every ${s.powerCardInterval} player${s.powerCardInterval === 1 ? '' : 's'} sold.`
+                  : 'Power cards are disabled for this game.'}
+              </span>
+            </div>
           </div>
 
           <div className="mt-5">
@@ -201,7 +258,7 @@ export default function Lobby() {
           </ul>
 
           {isHost ? (
-            <button className="btn-primary mt-6 w-full py-3 text-lg" disabled={!reqOk || !enoughPlayers} onClick={start}>
+            <button className="btn-primary mt-6 w-full py-3 text-lg" disabled={!reqOk || !poolOk || !enoughPlayers} onClick={start}>
               🚀 Start Auction
             </button>
           ) : (

@@ -19,12 +19,20 @@ export default function PowerCardTargetModal({ card, onClose }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="panel w-full max-w-lg p-6 animate-pop-in" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex items-start gap-3">
           <span className="text-4xl">{card.icon}</span>
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="font-display text-xl font-bold">{card.name}</h3>
             <p className="text-sm text-slate-400">{card.desc}</p>
           </div>
+          <button
+            className="btn-ghost -mt-1 -mr-1 shrink-0 rounded-full px-3 py-1 text-lg leading-none"
+            onClick={onClose}
+            aria-label="Cancel"
+            title="Cancel"
+          >
+            ✕
+          </button>
         </div>
 
         {card.target === 'none' && (
@@ -65,10 +73,6 @@ export default function PowerCardTargetModal({ card, onClose }) {
             empty="You have no players to select yet."
           />
         )}
-
-        <button className="btn-ghost mt-4 w-full" onClick={onClose}>
-          Cancel
-        </button>
       </div>
     </div>
   )

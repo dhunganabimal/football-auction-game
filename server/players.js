@@ -134,3 +134,45 @@ export const POSITIONS = ['GK', 'DEF', 'MID', 'FWD']
 export function freshPool() {
   return PLAYER_POOL.map((p) => ({ ...p }))
 }
+
+// How many players exist in the master pool for each position — this is the
+// upper bound a host can pick when limiting how many of a position go into
+// the auction (e.g. "only 7 GKs this game").
+export function countsByPosition() {
+  const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 }
+  for (const p of PLAYER_POOL) counts[p.position] = (counts[p.position] || 0) + 1
+  return counts
+}
+
+function shuffle(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+function clampInt(n, lo, hi) {
+  return Math.max(lo, Math.min(hi, Math.floor(n)))
+}
+
+// Build the pool actually used for an auction, honoring a per-position cap
+// (host setting). For each position we randomly pick up to `limits[pos]`
+// players out of every player available for that position, then shuffle the
+// combined pool so draw order/position isn't predictable. Missing/invalid
+// limits fall back to "include everyone available for that position".
+export function buildPool(limits) {
+  const byPos = {}
+  for (const p of PLAYER_POOL) {
+    ;(byPos[p.position] ||= []).push({ ...p })
+  }
+  let result = []
+  for (const pos of POSITIONS) {
+    const list = byPos[pos] || []
+    const requested = limits && Number.isFinite(limits[pos]) ? limits[pos] : list.length
+    const limit = clampInt(requested, 0, list.length)
+    result = result.concat(shuffle(list).slice(0, limit))
+  }
+  return shuffle(result)
+}

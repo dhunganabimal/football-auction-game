@@ -33,10 +33,16 @@ export default function AuctionRoom() {
               Room <span className="text-gradient">{state.code}</span>
             </div>
             <div className="text-xs text-slate-400">
-              {state.soldCount} sold · {state.poolCount} in pool · next power card at{' '}
-              {(Math.floor(state.soldCount / 10) + 1) * 10}
+              {state.soldCount} sold · {state.poolCount} in pool
+              {state.settings.powerCardInterval > 0 &&
+                ` · next power card at ${(Math.floor(state.soldCount / state.settings.powerCardInterval) + 1) * state.settings.powerCardInterval}`}
             </div>
-            <PoolTracker poolPositions={state.poolPositions} className="mt-1.5" />
+            <PoolTracker
+              poolPositions={state.poolPositions}
+              skippedPositions={state.skippedPositions}
+              skippedTotal={state.skippedCount}
+              className="mt-1.5"
+            />
           </div>
         </div>
         <div className="flex items-center gap-3">
