@@ -19,6 +19,7 @@ export default function Lobby() {
       nominationMode: s.nominationMode,
       timerMode: s.timerMode,
       biddingMode: s.biddingMode,
+      poolType: s.poolType,
       positionReqs: { ...s.positionReqs },
       poolLimits: { ...s.poolLimits },
       powerCardInterval: s.powerCardInterval,
@@ -107,6 +108,36 @@ export default function Lobby() {
               Minimums total {reqTotal} / {s.squadSize} squad slots.
               {!reqOk && ' Reduce minimums or increase squad size.'}
             </p>
+          </div>
+
+          <div className="mt-5">
+            <div className="label">Player pool</div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[
+                { key: 'mix', icon: '🌍', title: 'Mix', sub: 'Legends & current players' },
+                { key: 'legend', icon: '🏆', title: 'Legends', sub: 'Retired greats only' },
+                { key: 'current', icon: '⚽', title: 'Current', sub: 'Active players only' },
+              ].map((m) => {
+                const on = (s.poolType ?? 'mix') === m.key
+                return (
+                  <button
+                    key={m.key}
+                    disabled={!isHost}
+                    onClick={() => update({ poolType: m.key })}
+                    className={`rounded-xl border p-3 text-left transition ${
+                      on
+                        ? 'border-neon-green/60 bg-neon-green/10 shadow-neon'
+                        : 'border-white/10 bg-white/[0.03] hover:border-white/20'
+                    } ${!isHost && 'cursor-not-allowed opacity-70'}`}
+                  >
+                    <div className="font-display font-semibold">
+                      {m.icon} {m.title}
+                    </div>
+                    <div className="text-xs text-slate-400">{m.sub}</div>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="mt-5">

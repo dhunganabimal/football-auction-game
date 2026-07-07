@@ -231,6 +231,7 @@ function sanitizeSettings(s) {
     timerMode: s.timerMode,
     nominationMode: s.nominationMode,
     biddingMode: s.biddingMode,
+    poolType: s.poolType,
     positionReqs: s.positionReqs && {
       GK: Number(s.positionReqs.GK),
       DEF: Number(s.positionReqs.DEF),

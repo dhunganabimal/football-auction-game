@@ -1,4 +1,4 @@
-import { freshPool, buildPool, countsByPosition, POSITIONS } from './players.js'
+import { freshPool, buildPool, countsByPosition, POSITIONS, POOL_TYPES } from './players.js'
 import { POWER_CARDS, drawPowerCard } from './powerCards.js'
 
 // ---- Tunable game constants -------------------------------------------------
@@ -25,7 +25,8 @@ export class Room {
     this.code = code
     this.io = io
     this.hostId = null
-    this.maxPerPosition = countsByPosition() // e.g. { GK: 25, DEF: 25, MID: 25, FWD: 25 }
+    this.poolType = 'mix' // which player set to draw from: 'mix' | 'legend' | 'current'
+    this.maxPerPosition = countsByPosition(this.poolType) // upper bound per position for the chosen pool type
     this.settings = {
       budget: 100,
       squadSize: 11,
@@ -34,6 +35,7 @@ export class Room {
       timerMode: 'timed', // 'timed' = countdown, 'host' = host closes each auction manually
       nominationMode: 'random', // 'random' = auto-draw, 'manual' = players nominate
       biddingMode: 'open', // 'open' = free-for-all, 'turns' = circular one-at-a-time
+      poolType: this.poolType, // legends / current players / both (see players.js)
       poolLimits: { ...this.maxPerPosition }, // how many of each position are drawn into this game
       powerCardInterval: POWER_TRIGGER_EVERY, // power round after every N sold players (0 = never)
     }
@@ -160,13 +162,27 @@ export class Room {
       s.timerMode = settings.timerMode
     if (settings.biddingMode === 'open' || settings.biddingMode === 'turns')
       s.biddingMode = settings.biddingMode
+    // Pool type governs which player set is drawn from and thus the per-position
+    // caps. Apply it before poolLimits below. On a type change we reset the
+    // per-position limits to the new maxima — picking "Legends" should hand the
+    // host the whole legend pool, not a stale cap left over from the last type.
+    const poolTypeChanged =
+      POOL_TYPES.includes(settings.poolType) && settings.poolType !== s.poolType
+    if (poolTypeChanged) {
+      s.poolType = settings.poolType
+      this.poolType = settings.poolType
+      this.maxPerPosition = countsByPosition(this.poolType)
+      s.poolLimits = { ...this.maxPerPosition }
+    }
     if (settings.positionReqs) {
       for (const pos of POSITIONS) {
         const v = settings.positionReqs[pos]
         if (Number.isFinite(v)) s.positionReqs[pos] = clamp(v, 0, 15)
       }
     }
-    if (settings.poolLimits) {
+    // Skip on a type change: the block above already reset the limits to the new
+    // pool's maxima, and the incoming poolLimits still reflect the OLD pool.
+    if (settings.poolLimits && !poolTypeChanged) {
       for (const pos of POSITIONS) {
         const v = settings.poolLimits[pos]
         if (Number.isFinite(v)) s.poolLimits[pos] = clamp(v, 0, this.maxPerPosition[pos])
@@ -197,7 +213,7 @@ export class Room {
     this.status = 'auction'
     // Randomly select this game's pool from the master player list, honoring
     // the host's per-position caps (e.g. "only 7 GKs this game").
-    this.pool = buildPool(this.settings.poolLimits)
+    this.pool = buildPool(this.settings.poolLimits, this.settings.poolType)
     this.skippedPool = []
     this.nominatorIndex = 0
     this.pushLog('system', `Auction started — ${this.settings.budget}M budget, ${this.settings.squadSize}-player squads.`)

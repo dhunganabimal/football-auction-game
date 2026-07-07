@@ -248,17 +248,172 @@ FWD: [
 ],
 }
 
+// Legend / retired greats pool. Only a handful per position for now — add more
+// here over time. These are tagged with era 'legend' and are only drawn into a
+// game when the host picks the "Legends" or "Mix" pool (see buildPool).
+const legendRaw = {
+ GK: [
+['Lev Yashin','Dynamo Moscow',96,18],
+['Gianluigi Buffon','Juventus',95,17],
+['Iker Casillas','Real Madrid',95,17],
+['Oliver Kahn','Bayern Munich',94,16],
+['Peter Schmeichel','Manchester United',94,16],
+['Edwin van der Sar','Manchester United',94,16],
+['Petr Čech','Chelsea',93,15],
+['Dino Zoff','Juventus',93,15],
+['Sepp Maier','Bayern Munich',92,14],
+['José Luis Chilavert','Vélez Sarsfield',92,14],
+['Walter Zenga','Inter Milan',91,13],
+['David Seaman','Arsenal',91,13],
+['Jens Lehmann','Arsenal',90,12],
+['Cláudio Taffarel','Galatasaray',90,12],
+['Fabien Barthez','Manchester United',90,12],
+['Rinat Dasayev','Spartak Moscow',90,12],
+['Gordon Banks','Stoke City',92,14],
+['Pat Jennings','Tottenham',91,13],
+['Ricardo Zamora','Espanyol',91,13],
+['Thomas N\'Kono','Espanyol',90,12],
+['Victor Valdés','Barcelona',90,12],
+['Angelo Peruzzi','Juventus',90,12],
+['Julio César','Inter Milan',91,13],
+['Rogério Ceni','São Paulo',90,12],
+['Ubaldo Fillol','River Plate',90,12],
+['Harald Schumacher','Cologne',89,11],
+['Ray Clemence','Liverpool',90,12],
+['Oliver Reck','Werder Bremen',88,10],
+['Andoni Zubizarreta','Barcelona',91,13],
+['Peter Shilton','Nottingham Forest',90,12],
+],
+DEF: [
+['Paolo Maldini','AC Milan',97,20],
+['Franz Beckenbauer','Bayern Munich',97,20],
+['Franco Baresi','AC Milan',96,19],
+['Cafu','AC Milan',95,18],
+['Roberto Carlos','Real Madrid',95,18],
+['Alessandro Nesta','AC Milan',95,18],
+['Carles Puyol','Barcelona',95,18],
+['Fabio Cannavaro','Real Madrid',95,18],
+['Philipp Lahm','Bayern Munich',95,18],
+['Javier Zanetti','Inter Milan',94,17],
+['Bobby Moore','West Ham',94,17],
+['Ashley Cole','Chelsea',94,17],
+['Rio Ferdinand','Manchester United',94,17],
+['Jaap Stam','Manchester United',93,16],
+['John Terry','Chelsea',93,16],
+['Nemanja Vidić','Manchester United',93,16],
+['Marcel Desailly','AC Milan',93,16],
+['Lilian Thuram','Juventus',93,16],
+['Ronald Koeman','Barcelona',93,16],
+['Gaetano Scirea','Juventus',93,16],
+['Daniel Passarella','River Plate',92,15],
+['Giacinto Facchetti','Inter Milan',92,15],
+['Bixente Lizarazu','Bayern Munich',91,14],
+['Carlos Alberto','Santos',94,17],
+['Ruud Krol','Ajax',92,15],
+['Graham Alexander','Preston',89,11],
+['Tony Adams','Arsenal',92,15],
+['Giuseppe Bergomi','Inter Milan',92,15],
+['Lucio','Inter Milan',91,14],
+['Walter Samuel','Inter Milan',91,14],
+],
+MID: [
+['Johan Cruyff','Barcelona',97,20],
+['Zinedine Zidane','Real Madrid',97,20],
+['Lothar Matthäus','Bayern Munich',96,19],
+['Andrés Iniesta','Barcelona',96,19],
+['Xavi','Barcelona',96,19],
+['Michel Platini','Juventus',96,19],
+['Ronaldinho','Barcelona',96,19],
+['Kaká','AC Milan',95,18],
+['Andrea Pirlo','Juventus',95,18],
+['Steven Gerrard','Liverpool',95,18],
+['Frank Lampard','Chelsea',95,18],
+['Paul Scholes','Manchester United',95,18],
+['Ruud Gullit','AC Milan',95,18],
+['Rivaldo','Barcelona',95,18],
+['David Beckham','Manchester United',94,17],
+['Clarence Seedorf','AC Milan',94,17],
+['Patrick Vieira','Arsenal',94,17],
+['Claude Makélélé','Chelsea',94,17],
+['Socrates','Corinthians',94,17],
+['Michael Laudrup','Barcelona',94,17],
+['Zico','Flamengo',95,18],
+['Bobby Charlton','Manchester United',96,19],
+['Pavel Nedvěd','Juventus',93,16],
+['Deco','Barcelona',92,15],
+['Juan Román Riquelme','Boca Juniors',93,16],
+['Edgar Davids','Juventus',92,15],
+['Michael Ballack','Chelsea',93,16],
+['Dunga','Stuttgart',91,14],
+['Hristo Stoichkov','Barcelona',94,17],
+['Luis Suárez Miramontes','Inter Milan',92,15],
+],
+FWD: [
+['Pelé','Santos',98,22],
+['Diego Maradona','Napoli',97,21],
+['Ronaldo Nazário','Real Madrid',97,21],
+['Ferenc Puskás','Real Madrid',97,21],
+['Garrincha','Botafogo',96,20],
+['Marco van Basten','AC Milan',96,20],
+['Eusébio','Benfica',96,20],
+['George Best','Manchester United',96,20],
+['Romário','Barcelona',96,20],
+['Gerd Müller','Bayern Munich',96,20],
+['Alfredo Di Stéfano','Real Madrid',96,20],
+['Thierry Henry','Arsenal',96,20],
+['Roberto Baggio','Juventus',95,19],
+['Samuel Eto\'o','Barcelona',95,19],
+['Wayne Rooney','Manchester United',95,19],
+['Dennis Bergkamp','Arsenal',95,19],
+['Raúl','Real Madrid',94,18],
+['Didier Drogba','Chelsea',94,18],
+['Andriy Shevchenko','AC Milan',94,18],
+['Gabriel Batistuta','Fiorentina',94,18],
+['Kenny Dalglish','Liverpool',95,19],
+['Emilio Butragueño','Real Madrid',93,17],
+['Ian Rush','Liverpool',93,17],
+['Alan Shearer','Newcastle United',94,18],
+['Ruud van Nistelrooy','Manchester United',94,18],
+['David Villa','Barcelona',94,18],
+['Hugo Sánchez','Real Madrid',94,18],
+['Roberto Boninsegna','Inter Milan',91,14],
+['Jean-Pierre Papin','Marseille',93,17],
+['Luigi Riva','Cagliari',92,15],
+]
+}
+
+// The pool "types" a host can choose from in the lobby.
+//   mix     -> every player, legends and current alike
+//   legend  -> retired legends only
+//   current -> active players only (the classic pool)
+export const POOL_TYPES = ['mix', 'legend', 'current']
+
 let seq = 0
-export const PLAYER_POOL = Object.entries(raw).flatMap(([position, list]) =>
-  list.map(([name, club, rating, base]) => ({
-    id: `p${++seq}`,
-    name,
-    club,
-    position,
-    rating,
-    base,
-  }))
-)
+function flattenRaw(rawObj, era) {
+  return Object.entries(rawObj).flatMap(([position, list]) =>
+    list.map(([name, club, rating, base]) => ({
+      id: `p${++seq}`,
+      name,
+      club,
+      position,
+      rating,
+      base,
+      era, // 'current' | 'legend'
+    })),
+  )
+}
+
+export const PLAYER_POOL = [
+  ...flattenRaw(raw, 'current'),
+  ...flattenRaw(legendRaw, 'legend'),
+]
+
+// Does a player belong in the chosen pool type? 'mix' includes everyone.
+function matchesPoolType(p, poolType) {
+  if (poolType === 'legend') return p.era === 'legend'
+  if (poolType === 'current') return p.era === 'current'
+  return true // 'mix' (or anything unexpected) -> everyone
+}
 
 export const POSITIONS = ['GK', 'DEF', 'MID', 'FWD']
 
@@ -269,10 +424,14 @@ export function freshPool() {
 
 // How many players exist in the master pool for each position — this is the
 // upper bound a host can pick when limiting how many of a position go into
-// the auction (e.g. "only 7 GKs this game").
-export function countsByPosition() {
+// the auction (e.g. "only 7 GKs this game"). Honors the chosen pool type so the
+// cap reflects only the players actually eligible for that type.
+export function countsByPosition(poolType = 'mix') {
   const counts = { GK: 0, DEF: 0, MID: 0, FWD: 0 }
-  for (const p of PLAYER_POOL) counts[p.position] = (counts[p.position] || 0) + 1
+  for (const p of PLAYER_POOL) {
+    if (!matchesPoolType(p, poolType)) continue
+    counts[p.position] = (counts[p.position] || 0) + 1
+  }
   return counts
 }
 
@@ -290,13 +449,15 @@ function clampInt(n, lo, hi) {
 }
 
 // Build the pool actually used for an auction, honoring a per-position cap
-// (host setting). For each position we randomly pick up to `limits[pos]`
-// players out of every player available for that position, then shuffle the
-// combined pool so draw order/position isn't predictable. Missing/invalid
-// limits fall back to "include everyone available for that position".
-export function buildPool(limits) {
+// (host setting) and the chosen pool type (mix / legend / current). For each
+// position we randomly pick up to `limits[pos]` players out of every eligible
+// player for that position, then shuffle the combined pool so draw
+// order/position isn't predictable. Missing/invalid limits fall back to
+// "include everyone available for that position".
+export function buildPool(limits, poolType = 'mix') {
   const byPos = {}
   for (const p of PLAYER_POOL) {
+    if (!matchesPoolType(p, poolType)) continue
     ;(byPos[p.position] ||= []).push({ ...p })
   }
   let result = []
